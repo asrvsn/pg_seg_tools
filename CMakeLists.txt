@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.15...3.26)
+cmake_minimum_required(VERSION 3.20...3.26)
 
-project(nanobind_example LANGUAGES CXX)
+project(microseg LANGUAGES CXX)
 
 if (NOT SKBUILD)
   message(WARNING "\
@@ -56,4 +56,4 @@ nanobind_add_module(
 )
 
 # Install directive for scikit-build-core
-install(TARGETS nanobind_example_ext LIBRARY DESTINATION nanobind_example)
+install(TARGETS nanobind_example_ext LIBRARY DESTINATION microseg)
