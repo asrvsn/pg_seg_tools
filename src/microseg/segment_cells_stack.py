@@ -1,17 +1,12 @@
 '''
 Manual cell segmentor
 '''
-import pyqtgraph as pg
-from qtpy import QtWidgets
-from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QShortcut, QLabel, QTableWidgetItem, QGridLayout
-from qtpy.QtGui import QKeySequence
 import pickle
 import skimage
 import skimage.io
 from aicsimageio import AICSImage
 
-from pg_seg_widgets import *
+from .widgets.seg_2d import *
 
 class CellSegmentorWidget(SaveableWidget):
     exported = QtCore.pyqtSignal()

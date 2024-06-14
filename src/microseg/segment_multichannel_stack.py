@@ -4,22 +4,12 @@
 - uses cellpose for auto-segmentation
 - custom gui for manual curation
 '''
-
-import pyqtgraph as pg
-from qtpy import QtWidgets
-from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QShortcut, QLabel, QTableWidgetItem, QGridLayout
-from qtpy.QtGui import QKeySequence
-
-import matplotlib.pyplot as plt
+from qtpy.QtWidgets import QTableWidgetItem
 from aicsimageio import AICSImage
 import pickle
 import time
 
-from seg_2d import *
-from pg_seg_widgets import *
-from plane import *
-from mask_utils import *
+from .widgets.seg_2d import *
 
 class SegmentationInfoWidget(QtWidgets.QWidget):
     '''
@@ -173,7 +163,7 @@ class SegmentationWidget(QtWidgets.QWidget):
         )
         mask_outline = np.zeros_like(self._seg.mask[self._c])
         if self._seg.outline is not None:
-            draw_poly(mask_outline, self._seg.outline.vertices.flatten().tolist(), 1)
+            mutil.draw_poly(mask_outline, self._seg.outline.vertices.flatten().tolist(), 1)
         self._mask_curated.setData(
             self._seg.zproj[self._c], # View raw data for manual curation
             self._seg.cp_mask[self._c],
@@ -211,7 +201,7 @@ class SegmentationWidget(QtWidgets.QWidget):
 
     def _save_curated(self):
         mask, mask_outline = self._mask_curated.getData()
-        outline_polys = [PlanarPolygon(p, use_chull_if_invalid=True) for p in mask_to_polygons(mask_outline)]
+        outline_polys = [PlanarPolygon(p, use_chull_if_invalid=True) for p in mutil.mask_to_polygons(mask_outline)]
         assert len(outline_polys) <= 1, 'Cannot have more than one outline'
         print(f'Saving {len(outline_polys)} outlines')
         self._seg.mask[self._c] = mask.astype(self._seg.mask.dtype)

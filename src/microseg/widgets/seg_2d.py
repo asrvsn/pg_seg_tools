@@ -1,70 +1,16 @@
 '''
-Pyqt segmentation widgets
+2D segmentation widgets
 '''
+from qtpy.QtWidgets import QSpinBox, QDoubleSpinBox, QComboBox
+import cellpose
+import cellpose.models
+import cellpose.io
+import skimage
+import skimage.restoration as restoration
 
-from pg_widgets import *
+from .pg import *
+from microseg.data.seg_2d import *
 
-'''
-Saveable panel widgets
-'''
-
-class PaneledWidget(QWidget):
-    '''
-    Widget with bottom panel
-    '''
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # Widgets
-        self._layout = VLayout()
-        self.setLayout(self._layout)
-        self._main_layout = VLayout()
-        self._main_widget = QWidget()
-        self._main_widget.setLayout(self._main_layout)
-        self._layout.addWidget(self._main_widget)
-        self._bottom_layout = HLayout()
-        self._bottom_widget = QWidget()
-        self._bottom_widget.setLayout(self._bottom_layout)
-        self._layout.addWidget(self._bottom_widget)
-
-class SaveableWidget(PaneledWidget, metaclass=QtABCMeta):
-    '''
-    Basic panel widget containing a top and bottom layout, with settings on the bottom and a save button with Ctrl+S shortcut
-    '''
-    saved = QtCore.pyqtSignal()
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # Widgets
-        self._settings_layout = HLayout()
-        self._settings_widget = QWidget()
-        self._settings_widget.setLayout(self._settings_layout)
-        self._bottom_layout.addWidget(self._settings_widget)
-        self._save_btn = PushButton('Save')
-        self._bottom_layout.addWidget(self._save_btn)
-        # self._overlay = FlashOverlay(self)
-        self.setDisabled(True) # Initially disabled
-
-        # Listeners
-        self._save_btn.clicked.connect(self._on_save)
-
-    def _on_save(self):
-        self.saved.emit()
-        # self._overlay.flash()
-
-    @abc.abstractmethod
-    def getData(self):
-        '''
-        Get data on save
-        '''
-        pass
-
-    def keyPressEvent(self, ev):
-        # Check for Ctrl+Save event
-        if ev.key() == QtCore.Qt.Key_S and ev.modifiers() & QtCore.Qt.ControlModifier:
-            self._on_save()
-        
 class ZProjectWidget(SaveableWidget):
     ''' 
     Z Projection widget for extracting z-projection from ZXY data 
@@ -213,11 +159,11 @@ class CellposeWidget(SaveableWidget):
         self._plot.setTitle('Cellpose Segmentation')
         self._main_layout.addWidget(self._plot)
         self._settings_layout.addWidget(QLabel('Dn:'))
-        self._denoise_dropdown = QtWidgets.QComboBox()
+        self._denoise_dropdown = QComboBox()
         self._denoise_dropdown.addItems(AVAIL_DENOISE_MODES)
         self._settings_layout.addWidget(self._denoise_dropdown)
         self._settings_layout.addWidget(QLabel('M:'))
-        self._model_dropdown = QtWidgets.QComboBox()
+        self._model_dropdown = QComboBox()
         self._model_dropdown.addItems(AVAIL_CP_MODELS)
         self._settings_layout.addWidget(self._model_dropdown)
         self._settings_layout.addWidget(QLabel('D:'))
@@ -238,7 +184,7 @@ class CellposeWidget(SaveableWidget):
         self._cellprob_box.setMaximum(6)
         self._settings_layout.addWidget(self._cellprob_box)
         self._settings_layout.addWidget(QLabel('NC:'))
-        self._nuclear_dropdown = QtWidgets.QComboBox()
+        self._nuclear_dropdown = QComboBox()
         self._nuclear_dropdown.addItem('None')
         for c in range(self.n_channels):
             self._nuclear_dropdown.addItem(f'Chan {c}')

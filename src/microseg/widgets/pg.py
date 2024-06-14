@@ -1,37 +1,20 @@
 '''
 Pyqtgraph widgets
 '''
-import pyqtgraph as pg
-import pyqtgraph.opengl as gl
-from pyqtgraph.Qt import QtGui, QtWidgets, QtCore
-from qtpy.QtWidgets import QFileSystemModel, QTreeView, QVBoxLayout, QWidget, QGraphicsPolygonItem, QGraphicsRectItem, QApplication, QSlider, QLabel, QHBoxLayout, QSpinBox, QGraphicsEllipseItem, QTableWidget, QHeaderView, QSizePolicy, QShortcut, QGraphicsOpacityEffect, QProgressBar, QDoubleSpinBox, QScrollBar
-from qtpy.QtGui import QKeySequence
-from qtpy.QtCore import QTimer, Qt, QObject
-from superqt import QRangeSlider
-import shortuuid
-from typing import List, Tuple, Callable, Optional, Union
+from typing import Tuple, Optional, List, Callable
 import numpy as np
-import pdb
-import os
-import sys
-import abc
-import cellpose
-import cellpose.models
-import cellpose.io
-import skimage
-import skimage.restoration as restoration
-import matplotlib.pyplot as plt
-import traceback
+import pyqtgraph as pg
+from qtpy import QtCore
+from qtpy import QtWidgets
+from qtpy.QtGui import QKeySequence
+from qtpy.QtWidgets import QShortcut
 
-from seg_2d import *
-from qt_widgets import *
-from matgeo.plane import *
-import pg_colors
-import mask_utils as mutil
-from matgeo.ellipsoid import *
-from colorwheel import *
+import microseg.utils.mask as mutil
+from .rois_2d import *
 
-''' General widgets and functions '''
+'''
+Functions
+'''
 
 def link_plots(p1: pg.PlotWidget, p2: pg.PlotWidget):
     p1.setXLink(p2)
@@ -39,54 +22,9 @@ def link_plots(p1: pg.PlotWidget, p2: pg.PlotWidget):
     p2.setXLink(p1)
     p2.setYLink(p1)
 
-class HLayout(QtWidgets.QHBoxLayout):
-	'''
-	HBoxLayout with small margins
-	'''
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self.setContentsMargins(0, 0, 0, 0)
-		self.setAlignment(Qt.AlignmentFlag.AlignLeft)
-
-class VLayout(QtWidgets.QVBoxLayout):
-	'''
-	VBoxLayout with small margins
-	'''
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self.setContentsMargins(0, 0, 0, 0)
-		self.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-class StyledWidget(QtWidgets.QWidget):
-
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self._stylename = None
-
-	def addStyle(self, style: str):
-		# Lazily add style parameters
-		if self._stylename is None:
-			self._stylename = shortuuid.uuid()
-			self.setAttribute(Qt.WA_StyledBackground)
-			self.setObjectName(self._stylename)
-		self.setStyleSheet(f'#{self._stylename} {{{style}}}')
-
-	def clearStyle(self):
-		self.setStyleSheet('')
-
-class HLayoutWidget(StyledWidget):
-
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self._layout = HLayout()
-		self.setLayout(self._layout)
-
-class VLayoutWidget(StyledWidget):
-
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self._layout = VLayout()
-		self.setLayout(self._layout)
+'''
+Classes
+'''
 
 class NoTouchPlotWidget(pg.PlotWidget):
     '''
@@ -134,118 +72,6 @@ class ImagePlotWidget(NoTouchPlotWidget):
 
         # Set the new range
         vb.setRange(xRange=new_x_range, yRange=new_y_range, padding=0)
-
-class IntegerSlider(HLayoutWidget):
-    '''
-    Integer slider with single handle
-    '''
-    def __init__(self, *args, mode: str='slide', **kwargs):
-        super().__init__(*args, **kwargs)
-        if mode == 'slide':
-            self._slider = QSlider()
-            self._slider.setTickPosition(QSlider.TicksBelow)
-            self._slider.setTickInterval(1)
-        elif mode == 'scroll':
-            self._slider = QScrollBar()
-        self._layout.addWidget(self._slider)
-        self._label = QLabel()
-        self._layout.addWidget(self._label)
-        self._slider.setOrientation(QtCore.Qt.Horizontal)
-        self._slider.setSingleStep(1)
-        self._slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-
-        self._slider.valueChanged.connect(lambda x: self._label.setText(f'{x}/{self._max}'))
-        self.valueChanged = self._slider.valueChanged
-
-    def setData(self, min: int, max: int, x: int):
-        assert min <= x <= max, 'x must be within min and max'
-        self._max = max
-        self._slider.setMinimum(min)
-        self._slider.setMaximum(max)
-        self._slider.setValue(x)
-        self._label.setText(f'{x}/{max}')
-
-class IntegerRangeSlider(HLayoutWidget):
-    '''
-    Integer slider with two handles
-    '''
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._slider = QRangeSlider()
-        self._layout.addWidget(self._slider)
-        self._label = QLabel()
-        self._layout.addWidget(self._label)
-        self._slider.setOrientation(QtCore.Qt.Horizontal)
-        self._slider.setTickPosition(QSlider.TicksBelow)
-        self._slider.setTickInterval(1)
-        self._slider.setSingleStep(1)
-        self._slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-
-        self._slider.valueChanged.connect(lambda x,y: self._label.setText(f'{x}-{y}/{self._max}'))
-        self.valueChanged = self._slider.valueChanged
-
-    def setData(self, min: int, max: int, range: Tuple[int, int]):
-        x, y = range
-        assert min <= x <= y <= max, 'range must be within min and max'
-        self._max = max
-        self._slider.setMinimum(min)
-        self._slider.setMaximum(max)
-        self._slider.setValue(range)
-        self._label.setText(f'{x}-{y}/{max}')
-
-''' 2D widgets '''
-
-class PolygonItem(QGraphicsPolygonItem):
-    '''
-    Polygon from numpy array
-    '''
-    def __init__(self, polygon: PlanarPolygon, color: np.ndarray, alpha: float=1.0, **kwargs):
-        self.polygon = polygon
-        self._brush = pg.mkBrush(*color, int(alpha*255))
-        self._dark_brush = pg.mkBrush(*color, int(min(1,alpha*1.5)*255))
-        super().__init__(pg.QtGui.QPolygonF([
-            QtCore.QPointF(p[1], p[0]) for p in polygon.vertices
-        ]), **kwargs)
-        self.setBrush(self._brush)
-        self.setAcceptHoverEvents(True)
-
-    # Increase alpha on hover event
-    def hoverEnterEvent(self, event):
-        self.setBrush(self._dark_brush)
-
-    # Decrease alpha on hover event
-    def hoverLeaveEvent(self, event):
-        self.setBrush(self._brush)
-
-    # Print on click event
-    def mousePressEvent(self, event):
-        self.setBrush(self._dark_brush)
-        super().mousePressEvent(event)
-
-class TessellationItem(QGraphicsRectItem):
-    '''
-    Transparent layer containing multiple polygons as widget
-    '''
-    def __init__(self, polygons: List[PlanarPolygon], cmap: Callable=None, alpha: float=0.5, **kwargs):
-        super().__init__(**kwargs)
-        self.polygons = polygons
-        if cmap is None:
-            cmap = lambda polys: map_colors(np.arange(len(polys)), 'categorical', i255=True)
-        self.cmap = cmap
-        self.alpha = alpha
-        self.setAcceptHoverEvents(True)
-        self.draw_polygons()
-
-    def draw_polygons(self):
-        colors = self.cmap(self.polygons)
-        self.poly_widgets = []
-        for p, c in zip(self.polygons, colors):
-            pitem = PolygonItem(p, c, self.alpha)
-            self.poly_widgets.append(pitem)
-            pitem.setParentItem(self)
-
-class EditableTessellationItem(TessellationItem):
-    pass
 
 class MaskItem(pg.ImageItem):
     '''
@@ -435,6 +261,7 @@ class EditableMaskItem(MaskItem):
                     self._stop_editing()
         else:
             super().mouse_move(pos)
+
 class MaskImageWidget(NoTouchPlotWidget):
     '''
     Combined image + mask items
@@ -460,57 +287,6 @@ class MaskImageWidget(NoTouchPlotWidget):
         self._mask = mask
         self._img_item.setImage(img)
         self._mask_item.setMask(mask)
-
-class LabeledCircle(Sphere):
-    def __init__(self, l: int, v: np.ndarray, r: float):
-        super().__init__(v, r)
-        self.l = l
-
-    def copy(self) -> 'LabeledCircle':
-        return LabeledCircle(self.l, self.v.copy(), self.r)
-    
-    def __eq__(self, other: 'LabeledCircle') -> bool:
-        return self.l == other.l and np.allclose(self.v, other.v) and np.allclose(self.M, other.M)
-
-class ClickProxy(QObject):
-    sigClicked = QtCore.pyqtSignal()
-
-class LabeledCircleItem(QGraphicsEllipseItem):
-
-    def __init__(self, circ: LabeledCircle):
-        self._circ = circ
-        super().__init__()
-        self._proxy = ClickProxy()
-        self.sigClicked = self._proxy.sigClicked
-        self._pen = pg_colors.cc_pens[circ.l % CirclesImageWidget.n_pens]
-        self._hpen = pg_colors.cc_pens_hover[circ.l % CirclesImageWidget.n_pens]
-        self._selected = False
-        self.setPen(self._pen)
-        self.setAcceptHoverEvents(True)
-        self.setRadius(circ.r)
-
-    def setRadius(self, r: float):
-        self.setRect(self._circ.v[0]-r, self._circ.v[1]-r, 2*r, 2*r)
-        self._circ.r = r
-
-    def hoverEnterEvent(self, event):
-        self.setPen(self._hpen)
-
-    def hoverLeaveEvent(self, event):
-        if not self._selected:
-            self.setPen(self._pen)
-
-    def mousePressEvent(self, event):
-        self.sigClicked.emit()
-        self.select()
-
-    def unselect(self):
-        self._selected = False
-        self.setPen(self._pen)
-
-    def select(self):
-        self._selected = True
-        self.setPen(self._hpen)
 
 class CirclesImageWidget(ImagePlotWidget):
     '''
@@ -639,98 +415,3 @@ class CirclesImageWidget(ImagePlotWidget):
         if hasattr(self, '_vb') and not self._vb is None:
             self._vb.setMouseEnabled(x=True, y=True)
         self._vb = None
-
-class SubplotGrid(pg.GraphicsLayoutWidget):
-    '''
-    Grid of 2d plots
-    '''
-    def __init__(self, nr: int, nc: int, synced: bool=False, **kwargs):
-        super().__init__(**kwargs)
-        self._layout = QtWidgets.QGridLayout()
-        self._nr = nr
-        self._nc = nc
-        self._plots = np.array([PlotWidget() for _ in range(nr*nc)])
-        if synced:
-            for i in range(nr*nc):
-                for j in range(i+1, nr*nc):
-                    self._plots[i].setXLink(self._plots[j])
-                    self._plots[i].setYLink(self._plots[j])
-                    self._plots[j].setXLink(self._plots[i])
-                    self._plots[j].setYLink(self._plots[i])
-        self._plots = self._plots.reshape((nr, nc))
-        for y in range(nr):
-            for x in range(nc):
-                self._layout.addWidget(self._plots[y,x], y, x)
-        self.setLayout(self._layout)
-
-    def __getitem__(self, key: slice) -> PlotWidget:
-        return self._plots[key]
-
-''' 3D widgets'''
-
-class GrabbableGLViewWidget(gl.GLViewWidget):
-    '''
-    Screen grabs on press enter key
-    '''
-    def _grab(self):
-        self.grabFramebuffer().save('screenshot.png')
-        print('Screenshot saved as screenshot.png')
-
-    def keyPressEvent(self, ev):
-        # Grab on enter key
-
-        if ev.key() == Qt.Key.Key_Return:
-            self._grab()
-        else:
-            super().keyPressEvent(ev)
-
-class GLSyncedCameraViewWidget(GrabbableGLViewWidget):
-    '''
-    Shamelessly taken from 
-    https://stackoverflow.com/questions/70551355/link-cameras-positions-of-two-3d-subplots-in-pyqtgraph
-    '''
-
-    def __init__(self, parent=None, devicePixelRatio=None, rotationMethod='euler'):
-        self.linked_views: List[GrabbableGLViewWidget] = []
-        super().__init__(parent, devicePixelRatio, rotationMethod)
-
-    def wheelEvent(self, ev):
-        """Update view on zoom event"""
-        super().wheelEvent(ev)
-        self._update_views()
-
-    def mouseMoveEvent(self, ev):
-        """Update view on move event"""
-        super().mouseMoveEvent(ev)
-        self._update_views()
-
-    def mouseReleaseEvent(self, ev):
-        """Update view on move event"""
-        super().mouseReleaseEvent(ev)
-        self._update_views()
-
-    def _update_views(self):
-        """Take camera parameters and sync with all views"""
-        camera_params = self.cameraParams()
-        # Remove rotation, we can't update all params at once (Azimuth and Elevation)
-        camera_params["rotation"] = None
-        for view in self.linked_views:
-            view.setCameraParams(**camera_params)
-
-    def sync_camera_with(self, view: GrabbableGLViewWidget):
-        """Add view to sync camera with"""
-        self.linked_views.append(view)
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser(description='Display folder contents in a PyQt tree-view with file extension filtering.')
-    parser.add_argument('folder_path', help='Path to the folder to display')
-    parser.add_argument('name_filter', help='Name to filter by')
-    args = parser.parse_args()
-
-    app = QApplication([])
-
-    viewer = ExtensionViewer(args.folder_path, [args.name_filter])
-    viewer.show()
-
-    sys.exit(app.exec())
