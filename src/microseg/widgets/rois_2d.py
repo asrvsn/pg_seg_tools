@@ -6,9 +6,11 @@ from qtpy import QtCore
 from qtpy.QtWidgets import QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsEllipseItem
 import pyqtgraph as pg
 
-from .base import *
 from matgeo.plane import PlanarPolygon
 from matgeo.ellipsoid import Sphere
+
+from .base import *
+from microseg.utils import pg_colors
 
 class PolygonItem(QGraphicsPolygonItem):
     '''
@@ -77,8 +79,8 @@ class LabeledCircleItem(QGraphicsEllipseItem):
         super().__init__()
         self._proxy = ClickProxy()
         self.sigClicked = self._proxy.sigClicked
-        self._pen = pg_colors.cc_pens[circ.l % CirclesImageWidget.n_pens]
-        self._hpen = pg_colors.cc_pens_hover[circ.l % CirclesImageWidget.n_pens]
+        self._pen = pg_colors.cc_pens[circ.l % pg_colors.n_pens]
+        self._hpen = pg_colors.cc_pens_hover[circ.l % pg_colors.n_pens]
         self._selected = False
         self.setPen(self._pen)
         self.setAcceptHoverEvents(True)

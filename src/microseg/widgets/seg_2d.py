@@ -342,7 +342,7 @@ class CellposeWidget(SaveableWidget):
             cellprob: float,
         ):
         assert cxy_img.ndim == 3, 'Image must be CXY'
-        assert cxy_img.shape[0] == self.n_channels, 'Image must have same number of channels as widget'
+        # assert cxy_img.shape[0] == self.n_channels, 'Image must have same number of channels as widget'
         assert orig_img.shape == cxy_img.shape, 'Image must have same shape as widget'
         assert channel < self.n_channels, 'Channel must be within number of channels'
         assert mask.ndim == 2, 'Mask must be XY'

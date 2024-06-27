@@ -10,6 +10,7 @@ from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import QShortcut
 
 import microseg.utils.mask as mutil
+from microseg.utils.colors import *
 from .rois_2d import *
 
 '''
@@ -40,7 +41,7 @@ class PlotWidget(NoTouchPlotWidget):
     '''
     Plot widget with some extra listeners
     '''
-    sigKeyPress = QtCore.pyqtSignal(object)
+    sigKeyPress = QtCore.Signal(object)
 
     def keyPressEvent(self, ev):
         # print('key press', ev.key())
@@ -137,6 +138,8 @@ class EditableMaskItem(MaskItem):
     '''
     Mask with editable labels
     '''
+    undo_n: int=100
+    
     def __init__(self, max_items: int=np.inf, *args, **kwargs):
         self._max_items = max_items
         self._shortcuts = []
@@ -292,8 +295,7 @@ class CirclesImageWidget(ImagePlotWidget):
     '''
     Editable widget for drawing circles on an image
     '''
-    n_pens: int = len(pg_colors.cc_pens)
-    edited = QtCore.pyqtSignal()
+    edited = QtCore.Signal()
     
     def __init__(self, editable: bool=False, **kwargs):
         super().__init__(**kwargs)

@@ -17,7 +17,7 @@ class QtABCMeta(type(QtCore.QObject), abc.ABCMeta):
 	pass
 
 class ClickProxy(QObject):
-    sigClicked = QtCore.pyqtSignal()
+    sigClicked = QtCore.Signal()
 
 ''' Parent classes '''
 
@@ -31,7 +31,7 @@ class PaneledWidget(QWidget):
         # Widgets
         self._layout = VLayout()
         self.setLayout(self._layout)
-        self._main_layout = VLayout()
+        self._main_layout = HLayout()
         self._main_widget = QWidget()
         self._main_widget.setLayout(self._main_layout)
         self._layout.addWidget(self._main_widget)
@@ -44,7 +44,7 @@ class SaveableWidget(PaneledWidget, metaclass=QtABCMeta):
     '''
     Basic panel widget containing a top and bottom layout, with settings on the bottom and a save button with Ctrl+S shortcut
     '''
-    saved = QtCore.pyqtSignal()
+    saved = QtCore.Signal()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -100,7 +100,7 @@ class TreeViewLeafSelectable(QTreeView):
 			return QTreeView.selectionCommand(self, index, event)
 		
 class ExtensionViewer(QWidget):
-	file_selected = QtCore.pyqtSignal(str)
+	file_selected = QtCore.Signal(str)
 	
 	def __init__(self, folder_path, name_filters: List[str]=['*.*'], show_filtered: bool=False, parent=None):
 		super(ExtensionViewer, self).__init__(parent)

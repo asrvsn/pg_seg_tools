@@ -4,12 +4,12 @@ Manual cell segmentor
 import pickle
 import skimage
 import skimage.io
-from aicsimageio import AICSImage
 
 from .widgets.seg_2d import *
+from .utils.data import get_voxel_size
 
 class CellSegmentorWidget(SaveableWidget):
-    exported = QtCore.pyqtSignal()
+    exported = QtCore.Signal()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -132,8 +132,7 @@ class CellSegmentorWindow(MainWindow):
         assert ZXY.ndim == 3, f'{path} is not a 3D image'
         assert ZXY.shape[1] == ZXY.shape[2], f'{path} is not a square ZXY image'
         print(f'Opening file of shape: {ZXY.shape}')
-        aimg = AICSImage(path)
-        self._voxres = np.asarray(aimg.physical_pixel_sizes[::-1])
+        self._voxres = get_voxel_size(path)[::-1]
         print(f'Physical pixel sizes (x,y,z): {self._voxres}')
 
         circles = None

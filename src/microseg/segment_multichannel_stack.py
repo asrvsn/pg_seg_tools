@@ -105,7 +105,7 @@ class SegmentationWidget(QtWidgets.QWidget):
         super().__init__(*args, **kwargs)
 
         # Widgets
-        self._layout = QGridLayout()
+        self._layout = QtWidgets.QGridLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(self._layout)
         self._zproj = ZProjectWidget()
@@ -143,7 +143,7 @@ class SegmentationWidget(QtWidgets.QWidget):
         self._shortcuts[-1].activated.connect(fun)
 
     def _change_channel(self, ch: int):
-        self._c = ch
+        self._c = min(max(0, ch), self._data.shape[0]-1)
         self._zproj.setData(
             self._data[self._c], 
             self._seg.settings.zproj_mode[self._c],
@@ -223,7 +223,7 @@ class SegmentationWidget(QtWidgets.QWidget):
 
     def setData(self, data: np.ndarray, seg: Segmentation2D, seg_path: str, ch: int=0):
         assert data.ndim == 4, 'data must be CZXY'
-        assert data.shape[0] == len(self.channels), 'data must have same number of channels as SegmentationWidget.channels'
+        # assert data.shape[0] == len(self.channels), 'data must have same number of channels as SegmentationWidget.channels'
         self._data = data
         self._seg = seg
         self._seg_path = seg_path
