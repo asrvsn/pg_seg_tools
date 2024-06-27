@@ -23,93 +23,30 @@ class GrabbableGLViewWidget(gl.GLViewWidget):
         else:
             super().keyPressEvent(ev)
 
-class SelectableGLViewWidget(gl.GLViewWidget):
+class GLHoverableScatterViewWidget(gl.GLViewWidget):
     '''
-    GLView with ray casting
+    GLView + Triangulation with hoverable 3D points using raycasting
     '''
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._ray = gl.GLLinePlotItem()
-        self.addItem(self._ray)
-    
-    def mouseMoveEvent(self, ev):
-        pos = ev.pos()
-        ray = self.get_ray(pos.x(), pos.y())
-        
-        intersection = self.calculate_intersection(ray)
-        
-        if intersection is not None:
-            print(f"Mouse position in data space: {intersection}")
-            self.draw_ray(intersection)
-        
-        super().mouseMoveEvent(ev)
-
-    def get_ray(self, x, y):
-        
-        _, __, width, height = self.getViewport()
-        ndc_x = (2.0 * x / width) - 1.0
-        ndc_y = 1.0 - (2.0 * y / height)
-        
-        ray_clip = np.array([ndc_x, ndc_y, -1.0, 1.0])
-        
-        proj_matrix = np.array(self.projectionMatrix(region=None).data()).reshape(4, 4)
-        ray_eye = np.linalg.inv(proj_matrix) @ ray_clip
-        # ray_eye /= ray_eye[3]
-        ray_eye = np.array([ray_eye[0], ray_eye[1], -1.0, 0.0])
-        
-        view_matrix = np.array(self.viewMatrix().data()).reshape(4, 4).T
-        ray_world = np.linalg.inv(view_matrix) @ ray_eye
-        ray_world = ray_world[:3] / np.linalg.norm(ray_world[:3])
-        
-        return ray_world
-    
-    def calculate_intersection(self, ray):
-        # Get the camera position and direction
-        camera_pos = np.array(self.cameraPosition())
-        camera_dir = self.opts['center'] - camera_pos
-        camera_dir = camera_dir / np.linalg.norm(camera_dir)
-        
-        # Calculate the plane normal (perpendicular to camera direction)
-        plane_normal = camera_dir
-        
-        # Calculate the distance from the camera to the center of the view
-        d = np.dot(self.opts['center'] - camera_pos, plane_normal)
-        
-        # Calculate the intersection with the plane
-        denom = np.dot(ray, plane_normal)
-        if abs(denom) > 1e-6:
-            t = d / denom
-            if t >= 0:
-                intersection = camera_pos + t * ray
-                return intersection
-        
-        return None
-    
-    def draw_ray(self, intersection):
-        camera_pos = np.array(self.cameraPosition())
-        
-        # Create line data
-        line_data = np.array([camera_pos, intersection])
-        self._ray.setData(pos=line_data, color=(1, 0, 0, 1), width=2)
-
-class GLSelectableScatterViewWidget(gl.GLViewWidget):
-    sel_eps: float=np.inf
+    sel_eps: float=1e-2 # Percentage of viewport diagonal to consider a selection
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Widgets
         self._sp = gl.GLScatterPlotItem(pxMode=True)
         self._sp.setGLOptions('translucent')
+        self._sp_hov = gl.GLScatterPlotItem(pxMode=True)
         self._sp_sel = gl.GLScatterPlotItem(pxMode=True)
         self.addItem(self._sp)
-        self.addItem(self._sp_sel)
+        self.addItem(self._sp_hov)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMouseTracking(True)
 
         # State
         self._pts = None
         self._proj_pts = None
-        self._selected = np.array([], dtype=np.intp)
-        self._hovered = None
+        self._width, self._height = None, None
+        self._diag = None
+        self._reset_mouse()
 
     def setScatterData(self, pts: np.ndarray, *args, **kwargs):
         self._pts = pts
@@ -117,27 +54,26 @@ class GLSelectableScatterViewWidget(gl.GLViewWidget):
 
     def _project(self):
         if not self._pts is None:
-            print('ran projection')
             # Get the current view and projection matrices
-            view_matrix = np.array(self.viewMatrix().data()).reshape(4, 4)
-            proj_matrix = np.array(self.projectionMatrix(region=None).data()).reshape(4, 4)
-
-            # Combine view and projection matrices
-            mvp_matrix = np.dot(proj_matrix, view_matrix)
+            proj = np.array(self.projectionMatrix(region=None).data()).reshape(4, 4)
+            view = np.array(self.viewMatrix().data()).reshape(4, 4)
+            mat = view @ proj
 
             # Project 3D points to normalized device coordinates
-            points_4d = np.column_stack((self._pts, np.ones(self._pts.shape[0])))
-            projected_points = np.dot(mvp_matrix, points_4d.T).T
+            pts_4d = np.column_stack((self._pts, np.ones(self._pts.shape[0])))
+            proj_pts = pts_4d @ mat # mat is not transposed, which is weird, but correct.
 
             # Perform perspective division
-            projected_points[:, :3] /= projected_points[:, 3, None]
+            proj_pts[:, :3] /= proj_pts[:, 3, None]
 
             # Convert to viewport coordinates
-            _, __, width, height = self.getViewport()
+            _, __, self._width, self._height = self.getViewport()
+            self._diag = np.sqrt(self._width**2 + self._height**2)
             self._proj_pts = np.column_stack((
-                (projected_points[:, 0] + 1) * width / 2,
-                (1 - projected_points[:, 1]) * height / 2
+                (proj_pts[:, 0] + 1) * self._width / 4, # This 4 is weird, but correct.
+                (1 - proj_pts[:, 1]) * self._height / 4
             ))
+            # print('ran projection')
 
     def paintGL(self, *args, **kwargs):
         super().paintGL(*args, **kwargs)
@@ -149,20 +85,46 @@ class GLSelectableScatterViewWidget(gl.GLViewWidget):
             pos = ev.pos()
             dists = np.linalg.norm(self._proj_pts - np.array([pos.x(), pos.y()]), axis=1)
             idx = np.argmin(dists)
-            if dists[idx] < self.sel_eps:
+            if dists[idx] < self.sel_eps * self._diag:
                 hovered = idx
             else:
                 hovered = None
-            print(f'hovered: {self._hovered}')
             if hovered != self._hovered:
                 self._hovered = hovered
                 self._redraw_sel()
 
     def _redraw_sel(self):
-        if self._hovered is None:
-            self._sp_sel.setData(pos=np.array([]))
-        else:
-            self._sp_sel.setData(pos=self._proj_pts[[self._hovered]], size=40)
+        hov = [] if self._hovered is None else [self._hovered]
+        self._sp_hov.setData(pos=self._pts[hov], size=80, color=(1,1,1,0.25))
+
+    def _reset_mouse(self):
+        self._hovered = None
+
+class GLSelectableScatterViewWidget(GLHoverableScatterViewWidget):
+    '''
+    Same as hover but supports (multiple) selection of the points
+    '''
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.addItem(self._sp_sel)
+
+    def _reset_mouse(self):
+        super()._reset_mouse()
+        self._selected = set()
+
+    def _redraw_sel(self):
+        self._sp_sel.setData(pos=self._pts[list(self._selected)], size=80, color=(1,1,1,0.5))
+
+    def mousePressEvent(self, ev):
+        super().mousePressEvent(ev)
+        if not self._hovered is None:
+            if ev.button() == Qt.MouseButton.LeftButton:
+                if ev.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                    self._selected.add(self._hovered)
+                else:
+                    self._selected = set([self._hovered])
+                self._redraw_sel()
+        
 
 def GLMakeSynced(base_class):
     class SyncedGLViewWidget(base_class):
