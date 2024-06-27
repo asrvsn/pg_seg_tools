@@ -19,7 +19,8 @@ class Register3DWidget(SaveableWidget):
         super().__init__(*args, **kwargs)
 
         # Widgets
-        self._vw = GLSelectableSurfaceViewWidget()
+        # self._vw = GLSelectableSurfaceViewWidget()
+        self._vw = GLDrawableSurfaceViewWidget()
         self._main_layout.addWidget(self._vw)
 
         # Listeners
@@ -32,7 +33,7 @@ class Register3DWidget(SaveableWidget):
         self.setDisabled(False)
         pts -= pts.mean(axis=0) # Re-center
         self._lbls = lbls
-        self._tri = Triangulation.surface_3d(pts, method='advancing_front').subdivide(4)
+        self._tri = Triangulation.surface_3d(pts, method='advancing_front')
         self._redraw()
 
     def getData(self) -> np.ndarray:

@@ -57,6 +57,7 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
         self._esc_sc.activated.connect(self._escape)
 
         # State
+        self.cam_motion_enabled = True
         self._tri = None
         self._md = None
         self._proj_pts = None
@@ -109,7 +110,8 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
         self._project()
 
     def mouseMoveEvent(self, ev):
-        super().mouseMoveEvent(ev)
+        if self.cam_motion_enabled:
+            super().mouseMoveEvent(ev)
         if not self._proj_pts is None:
             pos = ev.pos()
             dists = np.linalg.norm(self._proj_pts[self._cam_facing] - np.array([pos.x(), pos.y()]), axis=1)
@@ -163,7 +165,31 @@ class GLSelectableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
                 self._redraw_sel()
 
 class GLDrawableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
-    pass
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Listeners
+        self._edit_sc = QShortcut(QKeySequence('E'), self)
+        self._edit_sc.activated.connect(self._edit)
+
+        # State
+        self._reset_drawing_state()
+
+    def _reset_drawing_state(self):
+        self._is_drawing = False
+        self._drawn_poly = None
+        self._drawn_label = None
+        # Enable viewport movement
+        self.cam_motion_enabled = True
+
+    def _reset_mouse(self):
+        super()._reset_mouse()
+        self._reset_drawing_state()
+
+    def _edit(self):
+        if not self._is_drawing:
+            self._is_drawing = True
+            self.cam_motion_enabled = False
 
 def GLMakeSynced(base_class):
     class SyncedGLViewWidget(base_class):
