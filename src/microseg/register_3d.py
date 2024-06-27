@@ -19,39 +19,29 @@ class Register3DWidget(SaveableWidget):
         super().__init__(*args, **kwargs)
 
         # Widgets
-        self._vw = GLSelectableScatterViewWidget()
-        self._mesh = gl.GLMeshItem(drawEdges=True)
-        self._vw.addItem(self._mesh)
+        self._vw = GLSelectableSurfaceViewWidget()
         self._main_layout.addWidget(self._vw)
 
         # Listeners
 
         # State
-        self._pts = None
+        self._tri = None
         self._lbls = None
-        self._md = None
-        self._size = None
 
     def setData(self, pts: np.ndarray, lbls: np.ndarray):
         self.setDisabled(False)
-        self._pts = pts - pts.mean(axis=0) # Re-center
+        pts -= pts.mean(axis=0) # Re-center
         self._lbls = lbls
-        tri = Triangulation.surface_3d(self._pts, method='advancing_front')
-        self._md = gl.MeshData(vertexes=tri.pts, faces=tri.simplices)
-        # self._size = pdist(self._pts).min() / 2
-        self._size = 20
+        self._tri = Triangulation.surface_3d(pts, method='advancing_front').subdivide(4)
         self._redraw()
 
     def getData(self) -> np.ndarray:
         return self._lbls.copy()
 
     def _redraw(self):
-        assert not self._pts is None
-        assert not self._lbls is None
-        colors = map_colors(self._lbls, 'categorical', rgba=True)
-        self._vw.setScatterData(self._pts, color=colors, size=self._size)
-        self._mesh.setMeshData(meshdata=self._md)
-
+        if not (self._tri is None or self._lbls is None):
+            colors = map_colors(self._lbls, 'categorical', rgba=True)
+            self._vw.setMeshData(self._tri, color=colors)
 
 class Register3DWindow(MainWindow):
     def __init__(self, path: str, *args, **kwargs):
@@ -97,6 +87,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('file', type=str, help='Path to source z-stack (.tif[f])')
     args = parser.parse_args()
+
+    # pg.setConfigOption('background', 'w')
+    # pg.setConfigOption('foreground', 'k')
 
     app = QtWidgets.QApplication(sys.argv)
     window = Register3DWindow(args.file)

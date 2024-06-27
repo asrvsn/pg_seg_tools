@@ -4,8 +4,11 @@ Pyqtgraph OpenGL widgets
 from typing import List
 import numpy as np
 from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QSizePolicy
+from qtpy.QtWidgets import QSizePolicy, QShortcut
+from qtpy.QtGui import QKeySequence
 import pyqtgraph.opengl as gl
+
+from matgeo import Triangulation
 
 class GrabbableGLViewWidget(gl.GLViewWidget):
     '''
@@ -23,44 +26,62 @@ class GrabbableGLViewWidget(gl.GLViewWidget):
         else:
             super().keyPressEvent(ev)
 
-class GLHoverableScatterViewWidget(gl.GLViewWidget):
+class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
     '''
     GLView + Triangulation with hoverable 3D points using raycasting
     '''
     sel_eps: float=1e-2 # Percentage of viewport diagonal to consider a selection
+    size: int=20
+    h_size: int=20
+    h_alpha: float=0.75
+    face_rgba: float=0.8
+    mesh_opts: dict = {
+        'shader': 'normalColor',
+        # 'glOptions': 'opaque',
+        'drawEdges': True,
+        'smooth': False,
+    }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Widgets
-        self._sp = gl.GLScatterPlotItem(pxMode=True)
-        self._sp.setGLOptions('translucent')
+        self._mesh = gl.GLMeshItem(**self.mesh_opts)
         self._sp_hov = gl.GLScatterPlotItem(pxMode=True)
-        self._sp_sel = gl.GLScatterPlotItem(pxMode=True)
-        self.addItem(self._sp)
+        self.addItem(self._mesh)
         self.addItem(self._sp_hov)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMouseTracking(True)
 
+        # Listeners
+        self._esc_sc = QShortcut(QKeySequence('Escape'), self)
+        self._esc_sc.activated.connect(self._escape)
+
         # State
-        self._pts = None
+        self._tri = None
+        self._md = None
         self._proj_pts = None
         self._width, self._height = None, None
         self._diag = None
+        self._cam_facing = None # Camera-facing points
         self._reset_mouse()
 
-    def setScatterData(self, pts: np.ndarray, *args, **kwargs):
-        self._pts = pts
-        self._sp.setData(pos=self._pts, *args, **kwargs)
+    def setMeshData(self, tri: Triangulation, *args, **kwargs):
+        self._tri = tri
+        self._md = gl.MeshData(vertexes=tri.pts, faces=tri.simplices, faceColors=np.full((len(tri.simplices), 4), self.face_rgba))
+        kwargs = dict(size=self.size) | kwargs
+        self._mesh.setMeshData(meshdata=self._md)
 
     def _project(self):
-        if not self._pts is None:
+        if not self._tri is None:
+            pts = self._tri.pts
+            
             # Get the current view and projection matrices
             proj = np.array(self.projectionMatrix(region=None).data()).reshape(4, 4)
             view = np.array(self.viewMatrix().data()).reshape(4, 4)
             mat = view @ proj
 
             # Project 3D points to normalized device coordinates
-            pts_4d = np.column_stack((self._pts, np.ones(self._pts.shape[0])))
+            pts_4d = np.column_stack((pts, np.ones(pts.shape[0])))
             proj_pts = pts_4d @ mat # mat is not transposed, which is weird, but correct.
 
             # Perform perspective division
@@ -73,6 +94,14 @@ class GLHoverableScatterViewWidget(gl.GLViewWidget):
                 (proj_pts[:, 0] + 1) * self._width / 4, # This 4 is weird, but correct.
                 (1 - proj_pts[:, 1]) * self._height / 4
             ))
+
+            # Compute camera-facing triangles
+            cam = np.array(self.cameraPosition())
+            normals = self._tri.compute_normals()
+            centroids = self._tri.compute_centroids()
+            cam_to_tri = cam - centroids
+            cam_facing_tri = (cam_to_tri * normals).sum(axis=1) > 0
+            self._cam_facing = np.unique(self._tri.simplices[cam_facing_tri])
             # print('ran projection')
 
     def paintGL(self, *args, **kwargs):
@@ -83,10 +112,10 @@ class GLHoverableScatterViewWidget(gl.GLViewWidget):
         super().mouseMoveEvent(ev)
         if not self._proj_pts is None:
             pos = ev.pos()
-            dists = np.linalg.norm(self._proj_pts - np.array([pos.x(), pos.y()]), axis=1)
+            dists = np.linalg.norm(self._proj_pts[self._cam_facing] - np.array([pos.x(), pos.y()]), axis=1)
             idx = np.argmin(dists)
             if dists[idx] < self.sel_eps * self._diag:
-                hovered = idx
+                hovered = self._cam_facing[idx]
             else:
                 hovered = None
             if hovered != self._hovered:
@@ -95,17 +124,24 @@ class GLHoverableScatterViewWidget(gl.GLViewWidget):
 
     def _redraw_sel(self):
         hov = [] if self._hovered is None else [self._hovered]
-        self._sp_hov.setData(pos=self._pts[hov], size=80, color=(1,1,1,0.25))
+        self._sp_hov.setData(pos=self._tri.pts[hov], size=self.h_size, color=(1,1,1,self.h_alpha))
 
     def _reset_mouse(self):
         self._hovered = None
 
-class GLSelectableScatterViewWidget(GLHoverableScatterViewWidget):
+    def _escape(self):
+        self._reset_mouse()
+        self._redraw_sel()
+
+class GLSelectableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
     '''
     Same as hover but supports (multiple) selection of the points
     '''
+    s_alpha: float=1.0
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._sp_sel = gl.GLScatterPlotItem(pxMode=True)
         self.addItem(self._sp_sel)
 
     def _reset_mouse(self):
@@ -113,7 +149,8 @@ class GLSelectableScatterViewWidget(GLHoverableScatterViewWidget):
         self._selected = set()
 
     def _redraw_sel(self):
-        self._sp_sel.setData(pos=self._pts[list(self._selected)], size=80, color=(1,1,1,0.5))
+        super()._redraw_sel()
+        self._sp_sel.setData(pos=self._tri.pts[list(self._selected)], size=self.h_size, color=(1,1,1,self.s_alpha))
 
     def mousePressEvent(self, ev):
         super().mousePressEvent(ev)
@@ -124,7 +161,9 @@ class GLSelectableScatterViewWidget(GLHoverableScatterViewWidget):
                 else:
                     self._selected = set([self._hovered])
                 self._redraw_sel()
-        
+
+class GLDrawableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
+    pass
 
 def GLMakeSynced(base_class):
     class SyncedGLViewWidget(base_class):
