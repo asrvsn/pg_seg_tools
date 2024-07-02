@@ -58,6 +58,8 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
 
         # State
         self.cam_motion_enabled = True
+        self._mat = None
+        self._dragging_cam = False
         self._tri = None
         self._md = None
         self._proj_pts = None
@@ -81,29 +83,34 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
             view = np.array(self.viewMatrix().data()).reshape(4, 4)
             mat = view @ proj
 
-            # Project 3D points to normalized device coordinates
-            pts_4d = np.column_stack((pts, np.ones(pts.shape[0])))
-            proj_pts = pts_4d @ mat # mat is not transposed, which is weird, but correct.
+            # If the view has change, re-project
+            if self._mat is None or not np.allclose(self._mat, mat):
+                self._mat = mat
 
-            # Perform perspective division
-            proj_pts[:, :3] /= proj_pts[:, 3, None]
+                # Project 3D points to normalized device coordinates
+                pts_4d = np.column_stack((pts, np.ones(pts.shape[0])))
+                proj_pts = pts_4d @ mat # mat is not transposed, which is weird, but correct.
 
-            # Convert to viewport coordinates
-            _, __, self._width, self._height = self.getViewport()
-            self._diag = np.sqrt(self._width**2 + self._height**2)
-            self._proj_pts = np.column_stack((
-                (proj_pts[:, 0] + 1) * self._width / 4, # This 4 is weird, but correct.
-                (1 - proj_pts[:, 1]) * self._height / 4
-            ))
+                # Perform perspective division
+                proj_pts[:, :3] /= proj_pts[:, 3, None]
 
-            # Compute camera-facing triangles
-            cam = np.array(self.cameraPosition())
-            normals = self._tri.compute_normals()
-            centroids = self._tri.compute_centroids()
-            cam_to_tri = cam - centroids
-            cam_facing_tri = (cam_to_tri * normals).sum(axis=1) > 0
-            self._cam_facing = np.unique(self._tri.simplices[cam_facing_tri])
-            # print('ran projection')
+                # Convert to viewport coordinates
+                _, __, self._width, self._height = self.getViewport()
+                self._diag = np.sqrt(self._width**2 + self._height**2)
+                self._proj_pts = np.column_stack((
+                    (proj_pts[:, 0] + 1) * self._width / 4, # This 4 is weird, but correct.
+                    (1 - proj_pts[:, 1]) * self._height / 4
+                ))
+
+                # Compute camera-facing triangles
+                cam = np.array(self.cameraPosition())
+                normals = self._tri.compute_normals()
+                centroids = self._tri.compute_centroids()
+                cam_to_tri = cam - centroids
+                cam_facing_tri = (cam_to_tri * normals).sum(axis=1) < 0
+                self._cam_facing = np.unique(self._tri.simplices[cam_facing_tri])
+
+                # print('ran projection')
 
     def paintGL(self, *args, **kwargs):
         super().paintGL(*args, **kwargs)
@@ -112,6 +119,10 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
     def mouseMoveEvent(self, ev):
         if self.cam_motion_enabled:
             super().mouseMoveEvent(ev)
+            if ev.buttons():  # Check if any mouse button is held
+                self._dragging_cam = True
+            else:
+                self._dragging_cam = False
         if not self._proj_pts is None:
             pos = ev.pos()
             dists = np.linalg.norm(self._proj_pts[self._cam_facing] - np.array([pos.x(), pos.y()]), axis=1)
@@ -154,10 +165,11 @@ class GLSelectableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
         super()._redraw_sel()
         self._sp_sel.setData(pos=self._tri.pts[list(self._selected)], size=self.h_size, color=(1,1,1,self.s_alpha))
 
-    def mousePressEvent(self, ev):
-        super().mousePressEvent(ev)
+    def mouseReleaseEvent(self, ev):
+        super().mouseReleaseEvent(ev)
         if not self._hovered is None:
-            if ev.button() == Qt.MouseButton.LeftButton:
+            if ev.button() == Qt.MouseButton.LeftButton and not self._dragging_cam:
+                print('selecting', self._hovered)
                 if ev.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                     self._selected.add(self._hovered)
                 else:
@@ -165,6 +177,13 @@ class GLSelectableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
                 self._redraw_sel()
 
 class GLDrawableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
+    '''
+    Same as hover but supports drawing embedded polygons
+    '''
+    mesh_opts: dict = GLHoverableSurfaceViewWidget.mesh_opts | {
+        'shader': None
+    }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -173,6 +192,7 @@ class GLDrawableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
         self._edit_sc.activated.connect(self._edit)
 
         # State
+        self._mask = None # For each triangle, associate a face ID (bit like a pixel mask); 0 is traditionally the unlabeled.
         self._reset_drawing_state()
 
     def _reset_drawing_state(self):
@@ -190,6 +210,17 @@ class GLDrawableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
         if not self._is_drawing:
             self._is_drawing = True
             self.cam_motion_enabled = False
+
+    def mouseMoveEvent(self, ev):
+        super().mouseMoveEvent(ev)
+        if self._is_drawing:
+            if not self._hovered is None:
+                if Qt.MouseButton.LeftButton & ev.buttons():
+                    if self._drawn_poly is None:
+                        print('starting draw')
+                        self._drawn_poly = [self._hovered]
+                    else:
+                        self._drawn_poly.append(self._hovered)
 
 def GLMakeSynced(base_class):
     class SyncedGLViewWidget(base_class):

@@ -19,8 +19,7 @@ class Register3DWidget(SaveableWidget):
         super().__init__(*args, **kwargs)
 
         # Widgets
-        # self._vw = GLSelectableSurfaceViewWidget()
-        self._vw = GLDrawableSurfaceViewWidget()
+        self._vw = GLSelectableSurfaceViewWidget()
         self._main_layout.addWidget(self._vw)
 
         # Listeners
@@ -51,7 +50,7 @@ class Register3DWindow(MainWindow):
         assert os.path.isfile(path), f'{path} is not a file'
         fname, ext = os.path.splitext(path)
         assert ext in ['.txt', '.csv']
-        self._path_lbls = f'{fname}.lbls'
+        self._path_lbls = f'{fname}.lbls.txt'
 
         pts = np.loadtxt(path)
         assert pts.shape[1] == 3, 'Wrong number of columns'
