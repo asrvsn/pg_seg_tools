@@ -49,7 +49,11 @@ class Register3DWidget(SaveableWidget):
         return self._tri.pts.copy()
 
     def _redraw(self, pts: np.ndarray):
-        self._tri = Triangulation.surface_3d(pts, method='advancing_front')
+        tri = Triangulation.surface_3d(pts, method='advancing_front')
+        # If an old one exists, try to match its orientation with respect to the camera position
+        if not (self._tri is None):
+            tri.match_orientation(self._tri)
+        self._tri = tri
         self._vw.setMeshData(self._tri)
 
     def _collapse_labels(self):
@@ -70,10 +74,22 @@ class Register3DWidget(SaveableWidget):
             self._dist_lbl.setText(f'Distance: -')
 
     def _undo(self):
-        print('undo')
+        if len(self._undo_stack) > 1:
+            print('undo')
+            self._redo_stack.append(self._undo_stack[-1])
+            self._undo_stack = self._undo_stack[:-1]
+            self._redraw(self._undo_stack[-1].pts)
+        else:
+            print('Cannot undo further')
 
     def _redo(self):
-        print('redo')
+        if len(self._redo_stack) > 0:
+            print('redo')
+            self._undo_stack.append(self._redo_stack[-1])
+            self._redo_stack = self._redo_stack[:-1]
+            self._redraw(self._undo_stack[-1].pts)
+        else:
+            print('Cannot redo further')
 
 class Register3DWindow(MainWindow):
     def __init__(self, path: str, *args, use_existing=True, **kwargs):
