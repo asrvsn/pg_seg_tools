@@ -56,7 +56,6 @@ class SaveableWidget(PaneledWidget, metaclass=QtABCMeta):
         self._bottom_layout.addWidget(self._settings_widget)
         self._save_btn = PushButton('Save')
         self._bottom_layout.addWidget(self._save_btn)
-        # self._overlay = FlashOverlay(self)
         self.setDisabled(True) # Initially disabled
 
         # Listeners
@@ -64,7 +63,6 @@ class SaveableWidget(PaneledWidget, metaclass=QtABCMeta):
 
     def _on_save(self):
         self.saved.emit()
-        # self._overlay.flash()
 
     @abc.abstractmethod
     def getData(self):

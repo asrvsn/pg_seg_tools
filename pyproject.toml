@@ -14,6 +14,10 @@ authors = [
 classifiers = [
     "License :: OSI Approved :: BSD License",
 ]
+dependencies = [
+    "qtpy",
+    "pyqtgraph >=0.13.7",
+]
 
 [project.urls]
 Homepage = "https://github.com/asrvsn/microseg"
