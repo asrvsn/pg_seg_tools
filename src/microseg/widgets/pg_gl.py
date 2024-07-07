@@ -43,7 +43,7 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
         'smooth': False,
     }
 
-    def __init__(self, *args, show_normals: bool=False, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Widgets
         self._mesh = gl.GLMeshItem(**self.mesh_opts)
@@ -61,7 +61,7 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
 
         # State
         self.cam_motion_enabled = True
-        self._show_normals = show_normals
+        self._show_normals = False
         self._mat = None
         self._dragging_cam = False
         self._tri = None
@@ -86,9 +86,18 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
         print(f'Set mesh with {len(tri.pts)} points and {len(tri.simplices)} faces')
         self._tri_normals = tri.compute_normals()
         self._tri_centroids = tri.compute_centroids()
+        self._redrawNormals()
+        self._escape()
+        self._project()
+
+    def toggleNormals(self):
+        self._show_normals = not self._show_normals
+        self._redrawNormals()
+
+    def _redrawNormals(self):
         if self._show_normals:
             print('Showing normals')
-            simp = tri.simplices[np.random.choice(len(tri.simplices))] # Use a random triangle for normal length
+            simp = self._tri.simplices[np.random.choice(len(self._tri.simplices))] # Use a random triangle for normal length
             normal_length = np.linalg.norm(self._tri.pts[simp[1]] - self._tri.pts[simp[0]])
             starts = self._tri_centroids
             ends = starts + self._tri_normals * normal_length
@@ -96,8 +105,8 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
             lines[0::2] = starts
             lines[1::2] = ends
             self._normals.setData(pos=lines, width=1, mode='lines')
-        self._escape()
-        self._project()
+        else:
+            self._normals.setData(pos=np.empty((0, 3), dtype=np.float32))
 
     def _project(self):
         if not self._tri is None:
@@ -257,9 +266,9 @@ def GLMakeSynced(base_class):
         https://stackoverflow.com/questions/70551355/link-cameras-positions-of-two-3d-subplots-in-pyqtgraph
         '''
 
-        def __init__(self, parent=None, devicePixelRatio=None, rotationMethod='euler'):
+        def __init__(self, *args, **kwargs):
             self.linked_views: List[GrabbableGLViewWidget] = []
-            super().__init__(parent, devicePixelRatio, rotationMethod)
+            super().__init__(*args, **kwargs)
             self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         def wheelEvent(self, ev):

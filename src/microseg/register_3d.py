@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pyqtgraph.opengl as gl
 from scipy.spatial.distance import pdist
+from qtpy.QtWidgets import QPushButton
 
 from matgeo import Triangulation
 
@@ -20,10 +21,12 @@ class Register3DWidget(SaveableWidget):
         super().__init__(*args, **kwargs)
 
         # Widgets
-        self._vw = GLSelectableSurfaceViewWidget(show_normals=True)
+        self._vw = GLSelectableSurfaceViewWidget()
         self._main_layout.addWidget(self._vw)
         self._dist_lbl = QLabel(f'Distance: -')
         self._settings_layout.addWidget(self._dist_lbl)
+        self._norm_btn = QPushButton('Toggle normals')
+        self._settings_layout.addWidget(self._norm_btn)
 
         # Listeners
         self._c_sc = QShortcut(QKeySequence('C'), self._vw)
@@ -33,6 +36,7 @@ class Register3DWidget(SaveableWidget):
         self._r_sc = QShortcut(QKeySequence('Ctrl+Shift+Z'), self._vw)
         self._r_sc.activated.connect(self._redo)
         self._vw.selectionChanged.connect(self._selection_changed)
+        self._norm_btn.clicked.connect(self._vw.toggleNormals)
 
         # State
         self._tri = None
@@ -50,8 +54,11 @@ class Register3DWidget(SaveableWidget):
 
     def _redraw(self, pts: np.ndarray):
         tri = Triangulation.surface_3d(pts, method='advancing_front')
+        if self._tri is None:
+        # If the first time, pick a consistent orientation for sanity
+            tri.orient_outward(tri.pts.mean(axis=0))
         # If an old one exists, try to match its orientation with respect to the camera position
-        if not (self._tri is None):
+        else:
             tri.match_orientation(self._tri)
         self._tri = tri
         self._vw.setMeshData(self._tri)
@@ -92,15 +99,15 @@ class Register3DWidget(SaveableWidget):
             print('Cannot redo further')
 
 class Register3DWindow(MainWindow):
-    def __init__(self, path: str, *args, use_existing=True, **kwargs):
+    def __init__(self, path: str, *args, ignore_existing=False, **kwargs):
         super().__init__(*args, **kwargs)
         self._path = path
         assert os.path.isfile(path), f'{path} is not a file'
         fname, ext = os.path.splitext(path)
         assert ext in ['.txt', '.csv']
-        self._path_new = f'{fname}.registered.txt'
+        self._path_new = Register3DWindow.make_path(fname)
 
-        if os.path.isfile(self._path_new) and use_existing:
+        if os.path.isfile(self._path_new) and (not ignore_existing):
             print(f'Found previously registered points, using: {self._path_new}')
             pts = np.loadtxt(self._path_new)
         else:
@@ -125,18 +132,23 @@ class Register3DWindow(MainWindow):
         print(f'Saving {len(pts)} points to: {self._path_new}')
         np.savetxt(self._path_new, pts)
 
+    @staticmethod
+    def make_path(name: str) -> str:
+        return f'{name}.registered.txt'
+
 if __name__ == '__main__':
     import sys
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('file', type=str, help='Path to source z-stack (.tif[f])')
+    parser.add_argument('file', type=str, help='Path to source 3D positions (.txt or .csv)')
+    parser.add_argument('--ignore-existing', action='store_true', help='Ignore previously registered points')
     args = parser.parse_args()
 
     # pg.setConfigOption('background', 'w')
     # pg.setConfigOption('foreground', 'k')
 
     app = QtWidgets.QApplication(sys.argv)
-    window = Register3DWindow(args.file)
+    window = Register3DWindow(args.file, ignore_existing=args.ignore_existing)
     window.show()
     sys.exit(app.exec_())
