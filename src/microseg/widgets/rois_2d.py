@@ -3,7 +3,7 @@
 from typing import Tuple, List, Callable
 import numpy as np
 from qtpy import QtCore
-from qtpy.QtWidgets import QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsEllipseItem
+from qtpy.QtWidgets import QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsEllipseItem, QGraphicsItem
 import pyqtgraph as pg
 
 from matgeo.plane import PlanarPolygon
@@ -12,83 +12,16 @@ from matgeo.ellipsoid import Sphere
 from .base import *
 from microseg.utils import pg_colors
 
-class PolygonItem(QGraphicsPolygonItem):
-    '''
-    Polygon from numpy array
-    '''
-    def __init__(self, polygon: PlanarPolygon, color: np.ndarray, alpha: float=1.0, **kwargs):
-        self.polygon = polygon
-        self._brush = pg.mkBrush(*color, int(alpha*255))
-        self._dark_brush = pg.mkBrush(*color, int(min(1,alpha*1.5)*255))
-        super().__init__(pg.QtGui.QPolygonF([
-            QtCore.QPointF(p[1], p[0]) for p in polygon.vertices
-        ]), **kwargs)
-        self.setBrush(self._brush)
-        self.setAcceptHoverEvents(True)
-
-    # Increase alpha on hover event
-    def hoverEnterEvent(self, event):
-        self.setBrush(self._dark_brush)
-
-    # Decrease alpha on hover event
-    def hoverLeaveEvent(self, event):
-        self.setBrush(self._brush)
-
-    # Print on click event
-    def mousePressEvent(self, event):
-        self.setBrush(self._dark_brush)
-        super().mousePressEvent(event)
-
-class TessellationItem(QGraphicsRectItem):
-    '''
-    Transparent layer containing multiple polygons as widget
-    '''
-    def __init__(self, polygons: List[PlanarPolygon], cmap: Callable=None, alpha: float=0.5, **kwargs):
-        super().__init__(**kwargs)
-        self.polygons = polygons
-        if cmap is None:
-            cmap = lambda polys: map_colors(np.arange(len(polys)), 'categorical', i255=True)
-        self.cmap = cmap
-        self.alpha = alpha
-        self.setAcceptHoverEvents(True)
-        self.draw_polygons()
-
-    def draw_polygons(self):
-        colors = self.cmap(self.polygons)
-        self.poly_widgets = []
-        for p, c in zip(self.polygons, colors):
-            pitem = PolygonItem(p, c, self.alpha)
-            self.poly_widgets.append(pitem)
-            pitem.setParentItem(self)
-
-class LabeledCircle(Sphere):
-    def __init__(self, l: int, v: np.ndarray, r: float):
-        super().__init__(v, r)
-        self.l = l
-
-    def copy(self) -> 'LabeledCircle':
-        return LabeledCircle(self.l, self.v.copy(), self.r)
-    
-    def __eq__(self, other: 'LabeledCircle') -> bool:
-        return self.l == other.l and np.allclose(self.v, other.v) and np.allclose(self.M, other.M)
-
-class LabeledCircleItem(QGraphicsEllipseItem):
-
-    def __init__(self, circ: LabeledCircle):
-        self._circ = circ
-        super().__init__()
+class SelectableItem:
+    def __init__(self, label: int=0):
+        self.label = label
         self._proxy = ClickProxy()
         self.sigClicked = self._proxy.sigClicked
-        self._pen = pg_colors.cc_pens[circ.l % pg_colors.n_pens]
-        self._hpen = pg_colors.cc_pens_hover[circ.l % pg_colors.n_pens]
+        self._pen = pg_colors.cc_pens[label % pg_colors.n_pens]
+        self._hpen = pg_colors.cc_pens_hover[label % pg_colors.n_pens]
         self._selected = False
         self.setPen(self._pen)
         self.setAcceptHoverEvents(True)
-        self.setRadius(circ.r)
-
-    def setRadius(self, r: float):
-        self.setRect(self._circ.v[0]-r, self._circ.v[1]-r, 2*r, 2*r)
-        self._circ.r = r
 
     def hoverEnterEvent(self, event):
         self.setPen(self._hpen)
@@ -101,10 +34,61 @@ class LabeledCircleItem(QGraphicsEllipseItem):
         self.sigClicked.emit()
         self.select()
 
+    def select(self):
+        self._selected = True
+        self.setPen(self._hpen)
+
     def unselect(self):
         self._selected = False
         self.setPen(self._pen)
 
-    def select(self):
-        self._selected = True
-        self.setPen(self._hpen)
+class LabeledThing(abc.ABC):
+    def __init__(self, l: int):
+        self.l = l
+
+    @abc.abstractmethod
+    def copy(self) -> 'LabeledThing':
+        pass
+
+class LabeledPolygon(PlanarPolygon, LabeledThing):
+    def __init__(self, l: int, vertices: np.ndarray, **kwargs):
+        PlanarPolygon.__init__(self, vertices, **kwargs)
+        LabeledThing.__init__(self, l)
+
+    def copy(self) -> 'LabeledPolygon':
+        return LabeledPolygon(self.l, self.vertices.copy())
+    
+    def __eq__(self, other: 'LabeledPolygon'):
+        return self.l == other.l and np.allclose(self.vertices, other.vertices)
+
+class SelectablePolygonItem(QGraphicsPolygonItem, SelectableItem):
+
+    def __init__(self, poly: LabeledPolygon, *args, **kwargs):
+        # Both constructors get called automatically, so pass the named one explicitly
+        super().__init__(pg.QtGui.QPolygonF([
+            QtCore.QPointF(p[1], p[0]) for p in poly.vertices
+        ]), *args, label=poly.l, **kwargs)
+        self._poly = poly
+
+class LabeledCircle(Sphere, LabeledThing):
+    def __init__(self, l: int, v: np.ndarray, r: float):
+        Sphere.__init__(self, v, r)
+        LabeledThing.__init__(self, l)
+
+    def copy(self) -> 'LabeledCircle':
+        return LabeledCircle(self.l, self.v.copy(), self.r)
+    
+    def __eq__(self, other: 'LabeledCircle') -> bool:
+        return self.l == other.l and np.allclose(self.v, other.v) and np.allclose(self.M, other.M)
+
+class SelectableCircleItem(QGraphicsEllipseItem, SelectableItem):
+
+    def __init__(self, circ: LabeledCircle, *args, **kwargs):
+        # Both constructors get called automatically, so pass the named one explicitly
+        super().__init__(*args, label=circ.l, **kwargs) 
+        self._circ = circ
+        self.setRadius(circ.r)
+
+    def setRadius(self, r: float):
+        self.setRect(self._circ.v[0]-r, self._circ.v[1]-r, 2*r, 2*r)
+        self._circ.r = r

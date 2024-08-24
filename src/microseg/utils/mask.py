@@ -12,6 +12,7 @@ from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
 from scipy.ndimage import binary_erosion, binary_dilation, find_objects
 import upolygon
+from skimage.morphology import convex_hull_image
 
 from matgeo.plane import *
 
@@ -82,7 +83,7 @@ def mask_to_polygons(mask: np.ndarray, rdp_eps: float=0., erode: int=0, dilate: 
 
     return polygons
 
-def mask_to_adjacency(mask: np.ndarray, nb_buffer: float=0.2, return_indices: bool=False) -> dict:
+def mask_to_adjacency(mask: np.ndarray, nb_buffer: float=0.1, return_indices: bool=False, use_chull: bool=True) -> dict:
     '''
     Extract the adjacency structure from an integer mask of multiple objects. 
     Arguments:
@@ -97,7 +98,10 @@ def mask_to_adjacency(mask: np.ndarray, nb_buffer: float=0.2, return_indices: bo
     elem_indices = dict(zip(elems, range(len(elems))))
     for elem_index, elem in enumerate(elems): # Skip zero
         if nb_buffer > 0:
-            mask_ = (mask == elem).astype(np.uint8)
+            mask_ = mask == elem
+            if use_chull:
+                mask_ = convex_hull_image(mask_)
+            mask_ = mask_.astype(np.uint8)
             radius = np.sqrt(mask_.sum() / np.pi) # Approx radius
             buf = int(np.ceil(nb_buffer * radius))
             mask_ = binary_dilation(mask_, iterations=buf)

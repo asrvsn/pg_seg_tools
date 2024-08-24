@@ -48,18 +48,28 @@ class PlotWidget(NoTouchPlotWidget):
         self.scene().keyPressEvent(ev)
         self.sigKeyPress.emit(ev)
 
+class ImageItem(pg.ImageItem):
+    '''
+    ImageItem correcting the insane behavior of pyqtgraph with respect to orientation
+    '''
+    def setImage(self, img: np.ndarray):
+        img = np.swapaxes(img, 0, 1)
+        img = img[:, ::-1, ...]
+        super().setImage(img)
+
 class ImagePlotWidget(NoTouchPlotWidget):
     '''
     Plot widget with default image item, zoom limits set to image
     '''
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, limit_zoom: bool=True, **kwargs):
         super().__init__(*args, **kwargs)
         self.setAspectLocked(True)
         self.hideAxis('left')
         self.hideAxis('bottom')
-        self._img = pg.ImageItem()
+        self._img = ImageItem()
         self.addItem(self._img)
-        self.getViewBox().sigRangeChanged.connect(self._limit_zoom)
+        if limit_zoom:
+            self.getViewBox().sigRangeChanged.connect(self._limit_zoom)
 
     def _limit_zoom(self):
         """Limit zoom to not zoom out beyond the image boundaries."""
@@ -74,7 +84,7 @@ class ImagePlotWidget(NoTouchPlotWidget):
         # Set the new range
         vb.setRange(xRange=new_x_range, yRange=new_y_range, padding=0)
 
-class MaskItem(pg.ImageItem):
+class MaskItem(ImageItem):
     '''
     Image mask as widget
     '''
@@ -248,12 +258,13 @@ class EditableMaskItem(MaskItem):
         if self._is_drawing:
             if QtCore.Qt.LeftButton & QtWidgets.QApplication.mouseButtons():
                 x, y = self.get_view_pos(pos)
+                y = self._mask.shape[0] - y # Weird pyqtgraph orientation
                 if self._drawn_poly is None:
                     print('starting draw')
-                    self._drawn_poly = [y, x] # Reverse order
+                    self._drawn_poly = [x, y]
                 else:
-                    self._drawn_poly.append(y)
                     self._drawn_poly.append(x)
+                    self._drawn_poly.append(y)
                     # Use self._mask as canvas
                     self._mask = mutil.draw_poly(self._mask, self._drawn_poly, self._drawn_label)
                     self.draw_mask(recompute=True)
@@ -275,7 +286,7 @@ class MaskImageWidget(NoTouchPlotWidget):
         self.hideAxis('left')
         self.hideAxis('bottom')
         self._editable = editable
-        self._img_item = pg.ImageItem()
+        self._img_item = ImageItem()
         self.addItem(self._img_item)
         self._mask_item = EditableMaskItem() if editable else MaskItem()
         self._mask_item.add_to_plot(self)
@@ -285,25 +296,25 @@ class MaskImageWidget(NoTouchPlotWidget):
         self._mask = None
 
     def setData(self, img: np.ndarray, mask: np.ndarray):
-        assert img.shape == mask.shape, 'Image and mask must have same shape'
+        assert img.shape[:2] == mask.shape, 'Image and mask must have same shape'
         self._img = img
         self._mask = mask
         self._img_item.setImage(img)
         self._mask_item.setMask(mask)
 
-class CirclesImageWidget(ImagePlotWidget):
+class EditableImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     '''
-    Editable widget for drawing circles on an image
+    Editable widget for drawing stuff on an image
     '''
     edited = QtCore.Signal()
-    
+
     def __init__(self, editable: bool=False, **kwargs):
         super().__init__(**kwargs)
         self._editable = editable
-        
+
         # State
-        self._circles: List[LabeledCircle] = []
-        self._rois: List[pg.CircleROI] = []
+        self._things: List[LabeledThing] = []
+        self._items: List[SelectableItem] = []
         self._selected: int = None
         self._shortcuts = []
         self._reset_drawing_state()
@@ -314,47 +325,59 @@ class CirclesImageWidget(ImagePlotWidget):
             sc = QShortcut(QKeySequence(key), self)
             sc.activated.connect(fun)
             self._shortcuts.append(sc)
-        add_sc('Delete', lambda: self._delete())
-        add_sc('Backspace', lambda: self._delete())
-        add_sc('E', lambda: self._edit())
+        if editable:
+            add_sc('Delete', lambda: self._delete())
+            add_sc('Backspace', lambda: self._delete())
+            add_sc('E', lambda: self._edit())
         add_sc('Escape', lambda: self._escape())
         self.scene().sigMouseMoved.connect(self._mouse_move)
 
     def setImage(self, img: np.ndarray):
         self._img.setImage(img)
 
-    def setCircles(self, circles: List[LabeledCircle]):
-        # Remove previous circles
-        self._selected = None
-        self._circles = circles
-        for r in self._rois:
-            self.removeItem(r)
-        # Add new circles
-        self._rois = []
-        for i, circ in enumerate(circles):
-            roi = LabeledCircleItem(circ)
-            self.addItem(roi)
-            self._listenRoi(i, roi)
-            self._rois.append(roi)
+    @abc.abstractmethod
+    def createItemFromThing(self, thing: LabeledThing) -> SelectableItem:
+        pass
 
-    def _listenRoi(self, i: int, roi: QGraphicsEllipseItem):
-        roi.sigClicked.connect(lambda: self._select(i))
+    @abc.abstractmethod
+    def getThingFromItem(self, item: SelectableItem) -> LabeledThing:
+        pass
+
+    def setThings(self, things: List[LabeledThing]):
+        # Remove previous things
+        self._selected = None
+        self._things = things
+        for item in self._items:
+            self.removeItem(item)
+        # Add new things
+        self._items = []
+        for i, thing in enumerate(things):
+            item = self.createItemFromThing(thing)
+            self.addItem(item)
+            self._listenItem(i, item)
+            self._items.append(item)
+
+    def getThings(self) -> List[LabeledThing]:
+        return [t.copy() for t in self._things]
+
+    def _listenItem(self, i: int, item: SelectableItem):
+        item.sigClicked.connect(lambda: self._select(i))
 
     def _select(self, i: int):
-        print(f'Selected {i}')
+        print(f'Selecting {i}')
         if i != self._selected:
             if not i is None:
-                self._rois[i].select()
+                self._items[i].select()
             if not self._selected is None:
-                self._rois[self._selected].unselect()
+                self._items[self._selected].unselect()
             self._selected = i
 
     def _delete(self):
         print('delete')
         if self._editable and not self._selected is None:
-            self._circles.pop(self._selected)
-            r = self._rois.pop(self._selected)
-            self.removeItem(r)
+            self._things.pop(self._selected)
+            item = self._items.pop(self._selected)
+            self.removeItem(item)
             self._selected = None
             self.edited.emit()
 
@@ -371,49 +394,79 @@ class CirclesImageWidget(ImagePlotWidget):
 
     def _escape(self):
         print('escape')
-        if not self._drawn_roi is None:
-            self.removeItem(self._drawn_roi)
+        if not self._drawn_item is None:
+            self.removeItem(self._drawn_item)
         self._reset_drawing_state()
         self._select(None)
+
+    @abc.abstractmethod
+    def initDrawingState(self):
+        ''' Reset the drawing state specific to this item '''
+        pass
+
+    def _reset_drawing_state(self):
+        self.initDrawingState()
+        self._is_drawing = False
+        self._drawn_lbl = None
+        self._drawn_item = None
+        if hasattr(self, '_vb') and not self._vb is None:
+            self._vb.setMouseEnabled(x=True, y=True)
+        self._vb = None
+
+    @abc.abstractmethod
+    def modifyDrawingState(self, pos):
+        ''' Modify the drawing state from given pos specific to this item '''
+        pass
 
     def _mouse_move(self, pos):
         if self._is_drawing:
             if QtCore.Qt.LeftButton & QtWidgets.QApplication.mouseButtons():
                 pos = self._vb.mapSceneToView(pos)
-                pos = np.array([pos.x(), pos.y()]) 
-                if self._drawn_pos is None:
-                    print('starting draw')
-                    self._drawn_pos = pos.copy() 
-                else:
-                    r = np.linalg.norm(pos - self._drawn_pos)
-                    if r > 0:
-                        # print(f'Drawing radius: {r}')
-                        if self._drawn_roi is None:
-                            # print('Made roi')
-                            self._drawn_roi = LabeledCircleItem(LabeledCircle(self._drawn_lbl, self._drawn_pos.copy(), r))
-                        else:
-                            # print('Editing roi')
-                            if not self._roi_added:
-                                self.addItem(self._drawn_roi) # Workaround for snapping bug
-                                self._roi_added = True
-                            self._drawn_roi.setRadius(r)
+                pos = np.array([pos.x(), pos.y()])
+                self.modifyDrawingState(pos)
             else:
-                if not self._drawn_roi is None:
+                if not self._drawn_item is None:
                     print('ending draw')
-                    self._circles.append(self._drawn_roi._circ)
-                    self._rois.append(self._drawn_roi)
-                    N = len(self._circles)-1
-                    self._listenRoi(N, self._drawn_roi)
+                    thing = self.getThingFromItem(self._drawn_item)
+                    self._things.append(thing)
+                    self._items.append(self._drawn_item)
+                    N = len(self._things)-1
+                    self._listenItem(N, self._drawn_item)
                     self._reset_drawing_state()
                     self._select(N)
                     self.edited.emit()
 
-    def _reset_drawing_state(self):
-        self._is_drawing = False
-        self._drawn_lbl = None
+class CirclesImageWidget(EditableImageWidget):
+    '''
+    Editable widget for drawing circles on an image
+    '''
+    def setCircles(self, circles: List[LabeledCircle]):
+        self.setThings(circles)
+
+    def createItemFromThing(self, circ: LabeledCircle) -> SelectableCircleItem:
+        return SelectableCircleItem(circ)
+    
+    def getThingFromItem(self, item: SelectableCircleItem) -> LabeledCircle:
+        return item._circ
+
+    def initDrawingState(self):
         self._drawn_pos = None
-        self._drawn_roi = None
-        self._roi_added = False
-        if hasattr(self, '_vb') and not self._vb is None:
-            self._vb.setMouseEnabled(x=True, y=True)
-        self._vb = None
+        self._item_added = False
+
+    def modifyDrawingState(self, pos: np.ndarray):
+        if self._drawn_pos is None:
+            print('starting draw')
+            self._drawn_pos = pos.copy() 
+        else:
+            r = np.linalg.norm(pos - self._drawn_pos)
+            if r > 0:
+                # print(f'Drawing radius: {r}')
+                if self._drawn_item is None:
+                    # print('Made roi')
+                    self._drawn_item = SelectableCircleItem(LabeledCircle(self._drawn_lbl, self._drawn_pos.copy(), r))
+                else:
+                    # print('Editing roi')
+                    if not self._item_added:
+                        self.addItem(self._drawn_item) # Workaround for snapping bug
+                        self._item_added = True
+                    self._drawn_item.setRadius(r)
