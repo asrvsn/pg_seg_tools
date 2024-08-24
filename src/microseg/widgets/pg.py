@@ -309,6 +309,7 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     Editable widget for drawing things on an image
     '''
     edited = QtCore.Signal()
+    undo_n: int=100
 
     def __init__(self, editable: bool=False, **kwargs):
         super().__init__(**kwargs)
@@ -319,8 +320,11 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         self._items: List[SelectableItem] = []
         self._selected: int = None
         self._shortcuts = []
+        self._vb = None
         self._reset_drawing_state()
         self._next_label: int = None
+        self._undo_stack = None # Uninitialized
+        self._redo_stack = None
 
         # Listeners
         def add_sc(key: str, fun: Callable):
@@ -331,6 +335,9 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             add_sc('Delete', lambda: self._delete())
             add_sc('Backspace', lambda: self._delete())
             add_sc('E', lambda: self._edit())
+            add_sc('Ctrl+Z', lambda: self._undo())
+            add_sc('Ctrl+Y', lambda: self._redo())
+            add_sc('Ctrl+Shift+Z', lambda: self._redo())
         add_sc('Escape', lambda: self._escape())
         self.scene().sigMouseMoved.connect(self._mouse_move)
 
@@ -345,7 +352,7 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     def getThingFromItem(self, item: SelectableItem) -> LabeledThing:
         pass
 
-    def setThings(self, things: List[LabeledThing]):
+    def setThings(self, things: List[LabeledThing], reset_stacks: bool=True):
         # Remove previous things
         self._selected = None
         self._things = things
@@ -358,6 +365,10 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             self.addItem(item)
             self._listenItem(i, item)
             self._items.append(item)
+        if reset_stacks:
+            self._undo_stack = [self.getThings()]
+            self._redo_stack = []
+        self._reset_drawing_state()
 
     def getThings(self) -> List[LabeledThing]:
         return [t.copy() for t in self._things]
@@ -381,7 +392,7 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             item = self._items.pop(self._selected)
             self.removeItem(item)
             self._selected = None
-            self.edited.emit()
+            self._push_stack()
 
     def _edit(self):
         print('edit')
@@ -411,7 +422,7 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         self._is_drawing = False
         self._drawn_lbl = None
         self._drawn_item = None
-        if hasattr(self, '_vb') and not self._vb is None:
+        if not self._vb is None:
             self._vb.setMouseEnabled(x=True, y=True)
         self._vb = None
 
@@ -435,8 +446,37 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
                     N = len(self._things)-1
                     self._listenItem(N, self._drawn_item)
                     self._reset_drawing_state()
-                    self._select(N)
-                    self.edited.emit()
+                    self._push_stack()
+                    # self._select(N)
+
+    def _push_stack(self):
+        self._undo_stack.append(self.getThings())
+        self._undo_stack = self._undo_stack[-self.undo_n:]
+        self._redo_stack = []
+        print(f'Current stacks: undo {len(self._undo_stack)}, redo {len(self._redo_stack)}')
+        self.edited.emit()
+
+    def _undo(self):
+        print('undo')
+        if len(self._undo_stack) > 1:
+            self._redo_stack.append(self._undo_stack[-1])
+            self._undo_stack = self._undo_stack[:-1]
+            things = [t.copy() for t in self._undo_stack[-1]]
+            self.setThings(things, reset_stacks=False)
+            self.edited.emit()
+        else:
+            print('Cannot undo further')
+
+    def _redo(self):
+        print('redo')
+        if len(self._redo_stack) > 0:
+            self._undo_stack.append(self._redo_stack[-1])
+            self._redo_stack = self._redo_stack[:-1]
+            things = [t.copy() for t in self._undo_stack[-1]]
+            self.setThings(things, reset_stacks=False)
+            self.edited.emit()
+        else:
+            print('Cannot redo further')
 
 class CirclesImageWidget(ThingsImageWidget):
     '''
@@ -494,7 +534,7 @@ class PolysImageWidget(ThingsImageWidget):
 
 class ThingSegmentorWidget(SaveableWidget, metaclass=QtABCMeta):
     @abc.abstractmethod
-    def makeWidget(*args, **kwargs):
+    def makeWidget(*args, **kwargs) -> ThingsImageWidget:
         pass
 
     def __init__(self, *args, **kwargs):
