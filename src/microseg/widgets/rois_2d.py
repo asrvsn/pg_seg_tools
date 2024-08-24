@@ -66,7 +66,7 @@ class SelectablePolygonItem(QGraphicsPolygonItem, SelectableItem):
     def __init__(self, poly: LabeledPolygon, *args, **kwargs):
         # Both constructors get called automatically, so pass the named one explicitly
         super().__init__(pg.QtGui.QPolygonF([
-            QtCore.QPointF(p[1], p[0]) for p in poly.vertices
+            QtCore.QPointF(p[0], p[1]) for p in poly.vertices
         ]), *args, label=poly.l, **kwargs)
         self._poly = poly
 

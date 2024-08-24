@@ -1,6 +1,7 @@
 '''
 Pyqtgraph widgets
 '''
+import os
 from typing import Tuple, Optional, List, Callable
 import numpy as np
 import pyqtgraph as pg
@@ -8,9 +9,11 @@ from qtpy import QtCore
 from qtpy import QtWidgets
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import QShortcut
+import pickle
 
 import microseg.utils.mask as mutil
 from microseg.utils.colors import *
+from microseg.utils.data import *
 from .rois_2d import *
 
 '''
@@ -258,7 +261,6 @@ class EditableMaskItem(MaskItem):
         if self._is_drawing:
             if QtCore.Qt.LeftButton & QtWidgets.QApplication.mouseButtons():
                 x, y = self.get_view_pos(pos)
-                y = self._mask.shape[0] - y # Weird pyqtgraph orientation
                 if self._drawn_poly is None:
                     print('starting draw')
                     self._drawn_poly = [x, y]
@@ -302,9 +304,9 @@ class MaskImageWidget(NoTouchPlotWidget):
         self._img_item.setImage(img)
         self._mask_item.setMask(mask)
 
-class EditableImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
+class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     '''
-    Editable widget for drawing stuff on an image
+    Editable widget for drawing things on an image
     '''
     edited = QtCore.Signal()
 
@@ -436,13 +438,10 @@ class EditableImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
                     self._select(N)
                     self.edited.emit()
 
-class CirclesImageWidget(EditableImageWidget):
+class CirclesImageWidget(ThingsImageWidget):
     '''
     Editable widget for drawing circles on an image
     '''
-    def setCircles(self, circles: List[LabeledCircle]):
-        self.setThings(circles)
-
     def createItemFromThing(self, circ: LabeledCircle) -> SelectableCircleItem:
         return SelectableCircleItem(circ)
     
@@ -470,3 +469,100 @@ class CirclesImageWidget(EditableImageWidget):
                         self.addItem(self._drawn_item) # Workaround for snapping bug
                         self._item_added = True
                     self._drawn_item.setRadius(r)
+
+class PolysImageWidget(ThingsImageWidget):
+    '''
+    Editable widget for drawing polygons on an image
+    '''
+    def createItemFromThing(self, poly: LabeledPolygon) -> SelectablePolygonItem:
+        return SelectablePolygonItem(poly)
+    
+    def getThingFromItem(self, item: SelectablePolygonItem) -> LabeledPolygon:
+        return item._poly
+    
+    def initDrawingState(self):
+        self._drawn_poses = []
+
+    def modifyDrawingState(self, pos: np.ndarray):
+        self._drawn_poses.append(pos.copy())
+        vertices = np.array(self._drawn_poses)
+        if vertices.shape[0] > 2:
+            if not self._drawn_item is None:
+                self.removeItem(self._drawn_item)
+            self._drawn_item = SelectablePolygonItem(LabeledPolygon(self._drawn_lbl, vertices))
+            self.addItem(self._drawn_item)
+
+class ThingSegmentorWidget(SaveableWidget, metaclass=QtABCMeta):
+    @abc.abstractmethod
+    def makeWidget(*args, **kwargs):
+        pass
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Create the widget
+        self._editor = self.makeWidget(limit_zoom=False)
+        self._main_layout.addWidget(self._editor)
+        self._nthings = QLabel()
+        self._settings_layout.addWidget(self._nthings)
+
+        # Listeners
+        self._editor.edited.connect(self._edited)
+
+        # State
+        self._img: np.ndarray = None
+        self._things: List[LabeledThing] = []
+
+    def setData(self, img: np.ndarray, things: List[LabeledThing]=[]):
+        self._img = img
+        self._things = things
+        self._editor.setImage(img)
+        self._editor.setThings(things)
+        self._advance_label()
+        self._nthings.setText(f'Things: {len(things)}')
+        self.setDisabled(False)
+
+    def _advance_label(self):
+        l = 0
+        for t in self._things:
+            l = max(l, t.l)
+        l += 1
+        self._editor._next_label = l
+
+    def _edited(self):
+        self._things = self._editor.getThings()
+        self._advance_label()
+        self._nthings.setText(f'Things: {len(self._things)}')
+        print('things edited')
+
+    def getData(self) -> List[LabeledThing]:
+        return self._things
+    
+class ThingsSegmentorWindow(MainWindow):
+    def __init__(self, path: str, chan: int, segmentor: ThingSegmentorWidget, descriptor: str, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._path = path
+        self._descriptor = descriptor
+        img = load_stack(path)[chan]
+        self._things_path = f'{os.path.splitext(path)[0]}.{descriptor}'
+
+        # Load existing things if exists
+        things = []
+        if os.path.isfile(self._things_path):
+            print(f'Loading {descriptor} from {self._things_path}')
+            things = pickle.load(open(self._things_path, 'rb'))
+
+        pg.setConfigOptions(antialias=True, useOpenGL=False)
+        self.setWindowTitle(f'{descriptor} segmentor')
+        self._seg = segmentor
+        self.setCentralWidget(segmentor)
+        self._seg.setData(img, things=things)
+        self.resizeToActiveScreen()
+
+        # Listeners
+        self._seg.saved.connect(self._save)
+
+    def _save(self):
+        things = self._seg.getData()
+        pickle.dump(things, open(self._things_path, 'wb'))
+        print(f'Saved {self._descriptor} to {self._things_path}')
