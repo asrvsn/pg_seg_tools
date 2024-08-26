@@ -326,20 +326,20 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         self._undo_stack = None # Uninitialized
         self._redo_stack = None
 
-        # Listeners
-        def add_sc(key: str, fun: Callable):
-            sc = QShortcut(QKeySequence(key), self)
-            sc.activated.connect(fun)
-            self._shortcuts.append(sc)
         if editable:
-            add_sc('Delete', lambda: self._delete())
-            add_sc('Backspace', lambda: self._delete())
-            add_sc('E', lambda: self._edit())
-            add_sc('Ctrl+Z', lambda: self._undo())
-            add_sc('Ctrl+Y', lambda: self._redo())
-            add_sc('Ctrl+Shift+Z', lambda: self._redo())
-        add_sc('Escape', lambda: self._escape())
+            self.add_sc('Delete', lambda: self._delete())
+            self.add_sc('Backspace', lambda: self._delete())
+            self.add_sc('E', lambda: self._edit())
+            self.add_sc('Ctrl+Z', lambda: self._undo())
+            self.add_sc('Ctrl+Y', lambda: self._redo())
+            self.add_sc('Ctrl+Shift+Z', lambda: self._redo())
+        self.add_sc('Escape', lambda: self._escape())
         self.scene().sigMouseMoved.connect(self._mouse_move)
+
+    def add_sc(self, key: str, fun: Callable):
+        sc = QShortcut(QKeySequence(key), self)
+        sc.activated.connect(fun)
+        self._shortcuts.append(sc)
 
     def setImage(self, img: np.ndarray):
         self._img.setImage(img)
@@ -431,6 +431,11 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         ''' Modify the drawing state from given pos specific to this item '''
         pass
 
+    @abc.abstractmethod
+    def finishDrawingState(self):
+        ''' Finish the drawing state specific to this item '''
+        pass
+
     def _mouse_move(self, pos):
         if self._is_drawing:
             if QtCore.Qt.LeftButton & QtWidgets.QApplication.mouseButtons():
@@ -440,6 +445,7 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             else:
                 if not self._drawn_item is None:
                     print('ending draw')
+                    self.finishDrawingState()
                     thing = self.getThingFromItem(self._drawn_item)
                     self._things.append(thing)
                     self._items.append(self._drawn_item)
@@ -482,6 +488,15 @@ class CirclesImageWidget(ThingsImageWidget):
     '''
     Editable widget for drawing circles on an image
     '''
+    def __init__(self, *args, **kwargs):
+        self._usePoly: bool = True
+        super().__init__(*args, **kwargs)
+        self.add_sc('P', lambda: self._toggle_use_poly())
+
+    def _toggle_use_poly(self):
+        self._usePoly = not self._usePoly
+        print(f'Using poly: {self._usePoly}')
+    
     def createItemFromThing(self, circ: LabeledCircle) -> SelectableCircleItem:
         return SelectableCircleItem(circ)
     
@@ -491,29 +506,51 @@ class CirclesImageWidget(ThingsImageWidget):
     def initDrawingState(self):
         self._drawn_pos = None
         self._item_added = False
+        PolysImageWidget.initDrawingState(self)
 
     def modifyDrawingState(self, pos: np.ndarray):
-        if self._drawn_pos is None:
-            print('starting draw')
-            self._drawn_pos = pos.copy() 
+        if self._usePoly:
+            PolysImageWidget.modifyDrawingState(self, pos)
         else:
-            r = np.linalg.norm(pos - self._drawn_pos)
-            if r > 0:
-                # print(f'Drawing radius: {r}')
-                if self._drawn_item is None:
-                    # print('Made roi')
-                    self._drawn_item = SelectableCircleItem(LabeledCircle(self._drawn_lbl, self._drawn_pos.copy(), r))
-                else:
-                    # print('Editing roi')
-                    if not self._item_added:
-                        self.addItem(self._drawn_item) # Workaround for snapping bug
-                        self._item_added = True
-                    self._drawn_item.setRadius(r)
+            if self._drawn_pos is None:
+                print('starting draw')
+                self._drawn_pos = pos.copy() 
+            else:
+                r = np.linalg.norm(pos - self._drawn_pos)
+                if r > 0:
+                    # print(f'Drawing radius: {r}')
+                    if self._drawn_item is None:
+                        # print('Made roi')
+                        self._drawn_item = self.createItemFromThing(LabeledCircle(self._drawn_lbl, self._drawn_pos.copy(), r))
+                    else:
+                        # print('Editing roi')
+                        if not self._item_added:
+                            self.addItem(self._drawn_item) # Workaround for snapping bug
+                            self._item_added = True
+                        self._drawn_item.setRadius(r)
+
+    def finishDrawingState(self):
+        if self._usePoly:
+            poly = PolysImageWidget.getThingFromItem(self, self._drawn_item)
+            circ = Sphere.from_poly(poly)
+            circ = LabeledCircle(poly.l, circ.v, circ.r)
+            self.removeItem(self._drawn_item)
+            self._drawn_item = self.createItemFromThing(circ)
+            self.addItem(self._drawn_item)
 
 class PolysImageWidget(ThingsImageWidget):
     '''
     Editable widget for drawing polygons on an image
     '''
+    def __init__(self, *args, **kwargs):
+        self._hullify: bool = True
+        super().__init__(*args, **kwargs)
+        self.add_sc('H', lambda: self._toggle_hullify())
+
+    def _toggle_hullify(self):
+        self._hullify = not self._hullify
+        print(f'Hullify: {self._hullify}')
+    
     def createItemFromThing(self, poly: LabeledPolygon) -> SelectablePolygonItem:
         return SelectablePolygonItem(poly)
     
@@ -529,7 +566,16 @@ class PolysImageWidget(ThingsImageWidget):
         if vertices.shape[0] > 2:
             if not self._drawn_item is None:
                 self.removeItem(self._drawn_item)
-            self._drawn_item = SelectablePolygonItem(LabeledPolygon(self._drawn_lbl, vertices))
+            poly = LabeledPolygon(self._drawn_lbl, vertices, use_chull_if_invalid=True)
+            self._drawn_item = SelectablePolygonItem(poly)
+            self.addItem(self._drawn_item)
+
+    def finishDrawingState(self):
+        if self._hullify:
+            poly = self.getThingFromItem(self._drawn_item)
+            poly = LabeledPolygon.from_pointcloud(poly.l, poly.vertices)
+            self.removeItem(self._drawn_item)
+            self._drawn_item = self.createItemFromThing(poly)
             self.addItem(self._drawn_item)
 
 class ThingSegmentorWidget(SaveableWidget, metaclass=QtABCMeta):
@@ -584,6 +630,7 @@ class ThingsSegmentorWindow(MainWindow):
         self._path = path
         self._descriptor = descriptor
         img = load_stack(path)[chan]
+        self._ylen = img.shape[0]
         self._things_path = f'{os.path.splitext(path)[0]}.{descriptor}'
 
         # Load existing things if exists
@@ -591,6 +638,8 @@ class ThingsSegmentorWindow(MainWindow):
         if os.path.isfile(self._things_path):
             print(f'Loading {descriptor} from {self._things_path}')
             things = pickle.load(open(self._things_path, 'rb'))
+        # Account for pyqtgraph orientation
+        things = [t.flipy(self._ylen) for t in things]
 
         pg.setConfigOptions(antialias=True, useOpenGL=False)
         self.setWindowTitle(f'{descriptor} segmentor')
@@ -604,5 +653,7 @@ class ThingsSegmentorWindow(MainWindow):
 
     def _save(self):
         things = self._seg.getData()
+        # Account for pyqtgraph orientation
+        things = [t.flipy(self._ylen) for t in things]
         pickle.dump(things, open(self._things_path, 'wb'))
         print(f'Saved {self._descriptor} to {self._things_path}')

@@ -50,6 +50,11 @@ class LabeledThing(abc.ABC):
     def copy(self) -> 'LabeledThing':
         pass
 
+    @abc.abstractmethod
+    def flipy(self) -> 'LabeledThing':
+        ''' This is needed because of Pyqtgraph's insane orientation defaults '''
+        pass
+
 class LabeledPolygon(PlanarPolygon, LabeledThing):
     def __init__(self, l: int, vertices: np.ndarray, **kwargs):
         PlanarPolygon.__init__(self, vertices, **kwargs)
@@ -60,6 +65,15 @@ class LabeledPolygon(PlanarPolygon, LabeledThing):
     
     def __eq__(self, other: 'LabeledPolygon'):
         return self.l == other.l and np.allclose(self.vertices, other.vertices)
+
+    def flipy(self, yval: float) -> 'LabeledPolygon':
+        poly = super().flipy(yval)
+        return LabeledPolygon(self.l, poly.vertices)
+
+    @staticmethod
+    def from_pointcloud(l: int, vertices: np.ndarray) -> 'LabeledPolygon':
+        vertices = PlanarPolygon.from_pointcloud(vertices).vertices
+        return LabeledPolygon(l, vertices, check=False)
 
 class SelectablePolygonItem(QGraphicsPolygonItem, SelectableItem):
 
@@ -80,6 +94,11 @@ class LabeledCircle(Sphere, LabeledThing):
     
     def __eq__(self, other: 'LabeledCircle') -> bool:
         return self.l == other.l and np.allclose(self.v, other.v) and np.allclose(self.M, other.M)
+
+    def flipy(self, yval: float) -> 'LabeledCircle':
+        v = self.v.copy()
+        v[1] = yval - v[1]
+        return LabeledCircle(self.l, v, self.r)
 
 class SelectableCircleItem(QGraphicsEllipseItem, SelectableItem):
 

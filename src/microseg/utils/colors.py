@@ -108,6 +108,7 @@ def map_colors(
     - 'periodic': map data into periodic color space 
     If rgba=True, use 4-channel color space (RGBA), otherwise use 3-channel color space (RGB).
     '''
+    data = np.asarray(data)
     def check_bounds():
         assert not d_min is None and not d_max is None, 'Must specify d_min and d_max for continuous_fixed scheme'
         assert not np.isclose(d_min, d_max), 'd_min and d_max must be different'

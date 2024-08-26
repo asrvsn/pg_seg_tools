@@ -9,6 +9,8 @@ from PIL import Image
 from typing import Tuple, Optional
 from skimage.io import imread
 import pdb
+import pickle
+import sys
 
 def get_voxel_size(path: str) -> np.ndarray:
     '''
@@ -71,6 +73,16 @@ def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None) -> np.nda
             ])
             # Restack to ZYXC
             img = img.transpose(0, 2, 3, 1)
+    elif fext in ['.seg']: # Support Segmentation2D files, uses the z-projected version
+        # Monkey-patch modules
+        from microseg.data import seg_2d
+        from matgeo import plane
+        sys.modules['seg_2d'] = seg_2d 
+        sys.modules['plane'] = plane
+        seg = pickle.load(open(path, 'rb'))
+        img = seg.zproj.copy()
+        print(f'img shape: {img.shape}')
+        return img
     else:
         raise NotImplementedError(f'File type {fext} not supported')
     # data = itk.array_view_from_image(itk.imread(args.data))
