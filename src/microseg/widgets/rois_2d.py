@@ -74,6 +74,10 @@ class LabeledPolygon(PlanarPolygon, LabeledThing):
     def from_pointcloud(l: int, vertices: np.ndarray) -> 'LabeledPolygon':
         vertices = PlanarPolygon.from_pointcloud(vertices).vertices
         return LabeledPolygon(l, vertices, check=False)
+    
+    @staticmethod
+    def from_poly(l: int, poly: PlanarPolygon) -> 'LabeledPolygon':
+        return LabeledPolygon(l, poly.vertices)
 
 class SelectablePolygonItem(QGraphicsPolygonItem, SelectableItem):
 

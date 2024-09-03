@@ -5,7 +5,15 @@ Manual polygon-based segmentor
 from .widgets.seg_2d import *
 from .utils.data import *
 
+from matgeo.plane import PlanarPolygon
+
 class PolysSegmentorWidget(ThingSegmentorWidget):
+    def setData(self, img, things):
+        # Allow polygons or labeled polygons
+        if len(things) > 0 and type(things[0]) is PlanarPolygon:
+            things = [LabeledPolygon.from_poly(i, p) for i, p in enumerate(things)]
+        super().setData(img, things)
+    
     def makeWidget(*args, **kwargs):
         return PolysImageWidget(*args, **kwargs)
     
