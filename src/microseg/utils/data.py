@@ -45,24 +45,24 @@ def load_XY_image(path: str, gray: bool=True, imscale: Optional[Tuple[float, flo
 
 def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None) -> np.ndarray:
     '''
-    Return data in XYZC format
+    Return data in ZXYC format
     imscale: optional rescaling factor for slices
     '''
     assert os.path.exists(path), f'File not found: {path}'
     _, fext = os.path.splitext(path)
     if fext == '.czi':
-        img = AICSImage(path).get_image_data('ZYXC') # ?
+        img = AICSImage(path).get_image_data('ZXYC') # ?
         assert imscale is None, 'Rescaling not supported for CZI files yet'
     elif fext in ['.tif', '.tiff']:
         img = imread(path)
         if img.ndim == 3:
-            assert img.shape[2] == 3, f'Expected 3 channels, got {img.shape[2]} channels'
+            assert img.shape[2] < img.shape[0], f'Expected XYC image, got too many channels: {img.shape}'
             img = np.array([img])
         if not imscale is None:
-            # Resize each slice (now in ZYXC)
+            # Resize each slice (now in ZXYC)
             r1, r2 = round(img.shape[1] * imscale[0]), round(img.shape[2] * imscale[1])
             print(f'Rescaling image from {img.shape[1:3]} to {(r1, r2)}')
-            # Restack to ZCYX for rescaling
+            # Restack to ZCXY for rescaling
             img = img.transpose(0, 3, 1, 2)
             img = np.array([
                 np.array([
@@ -71,7 +71,7 @@ def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None) -> np.nda
                 ])
                 for frame in img
             ])
-            # Restack to ZYXC
+            # Restack to ZXYC
             img = img.transpose(0, 2, 3, 1)
     elif fext in ['.seg']: # Support Segmentation2D files, uses the z-projected version
         # Monkey-patch modules
@@ -81,8 +81,12 @@ def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None) -> np.nda
         sys.modules['plane'] = plane
         seg = pickle.load(open(path, 'rb'))
         img = seg.zproj.copy()
-        print(f'img shape: {img.shape}')
+        # Reshape CXY to ZXYC
+        img = np.array([img.transpose(1, 2, 0)])
         return img
+    elif fext in ['.jpg', '.jpeg', '.png']:
+        img = load_XY_image(path, imscale=imscale, gray=False)
+        img = np.array([img])
     else:
         raise NotImplementedError(f'File type {fext} not supported')
     # data = itk.array_view_from_image(itk.imread(args.data))

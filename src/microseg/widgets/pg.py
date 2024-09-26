@@ -591,22 +591,43 @@ class ThingSegmentorWidget(SaveableWidget, metaclass=QtABCMeta):
         self._main_layout.addWidget(self._editor)
         self._nthings = QLabel()
         self._settings_layout.addWidget(self._nthings)
+        self._z_slider = IntegerSlider(mode='scroll')
+        self._settings_layout.addWidget(self._z_slider)
 
         # Listeners
         self._editor.edited.connect(self._edited)
+        self._z_slider.valueChanged.connect(lambda z: self._setZ(z, set_slider=False))
 
         # State
+        self._z = 0
         self._img: np.ndarray = None
         self._things: List[LabeledThing] = []
 
     def setData(self, img: np.ndarray, things: List[LabeledThing]=[]):
         self._img = img
         self._things = things
-        self._editor.setImage(img)
+        self._setZ(0)
         self._editor.setThings(things)
         self._advance_label()
         self._nthings.setText(f'Things: {len(things)}')
         self.setDisabled(False)
+
+    def _setZ(self, z: int, set_slider: bool=True):
+        ''' Determines the z-axis behavior and view '''
+        if self._img.ndim == 2 or (self._img.ndim == 3 and self._img.shape[0] == 1):
+            self._z = 0
+            img = self._img if self._img.ndim == 2 else self._img[0]
+            if set_slider:
+                print(f'Received standard 2D image, disabling z-slider')
+                self._z_slider.hide()
+        else:
+            self._z = z
+            img = self._img[z]
+            if set_slider:
+                print(f'Received z-stack of shape {self._img.shape}, enabling z-slider')
+                self._z_slider.show()
+                self._z_slider.setData(0, self._img.shape[0]-1, z)
+        self._editor.setImage(img)
 
     def _advance_label(self):
         l = 0
@@ -629,8 +650,10 @@ class ThingsSegmentorWindow(MainWindow):
         super().__init__(*args, **kwargs)
         self._path = path
         self._descriptor = descriptor
-        img = load_stack(path)[chan]
-        self._ylen = img.shape[0]
+        img = load_stack(path) # ZXYC
+        print(f'Loaded image from {path} with shape {img.shape}')
+        img = img[:, :, :, chan]
+        self._ylen = img.shape[2]
         self._things_path = f'{os.path.splitext(path)[0]}.{descriptor}'
 
         # Load existing things if exists

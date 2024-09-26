@@ -31,7 +31,8 @@ class MaskSegmentorWindow(MainWindow):
     def __init__(self, path: str, chan: int, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._path = path
-        img = load_stack(path)[chan]
+        img = load_stack(path) # ZXYC
+        img = img[:, :, :, chan]
         self._mask_path = f'{path}.mask.npy'
 
         # Load existing mask if exists
