@@ -14,12 +14,12 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('file', type=str, help='Path to source img')
-    parser.add_argument('-c', type=int, default=0, help='Channel number')
+    parser.add_argument('-c', type=int, default=None, help='Channel number')
     parser.add_argument('-d', type=str, default='circles', help='Descriptor')
     args = parser.parse_args()
 
     app = QtWidgets.QApplication(sys.argv)
     seg = CirclesSegmentorWidget()
-    win = ThingsSegmentorWindow(args.file, args.c, seg, args.d)
+    win = ThingsSegmentorWindow(args.file, seg, chan=args.c, desc=args.d)
     win.show()
     sys.exit(app.exec())

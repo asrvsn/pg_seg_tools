@@ -614,7 +614,7 @@ class ThingSegmentorWidget(SaveableWidget, metaclass=QtABCMeta):
 
     def _setZ(self, z: int, set_slider: bool=True):
         ''' Determines the z-axis behavior and view '''
-        if self._img.ndim == 2 or (self._img.ndim == 3 and self._img.shape[0] == 1):
+        if self._img.ndim == 2 or (self._img.ndim in [3, 4] and self._img.shape[0] == 1):
             self._z = 0
             img = self._img if self._img.ndim == 2 else self._img[0]
             if set_slider:
@@ -646,26 +646,30 @@ class ThingSegmentorWidget(SaveableWidget, metaclass=QtABCMeta):
         return self._things
     
 class ThingsSegmentorWindow(MainWindow):
-    def __init__(self, path: str, chan: int, segmentor: ThingSegmentorWidget, descriptor: str, *args, **kwargs):
+    def __init__(self, path: str, segmentor: ThingSegmentorWidget, chan: Optional[int]=None, desc: str='things', *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._path = path
-        self._descriptor = descriptor
+        self._descriptor = desc
         img = load_stack(path) # ZXYC
         print(f'Loaded image from {path} with shape {img.shape}')
-        img = img[:, :, :, chan]
+        if chan is None:
+            assert img.shape[-1] in [1, 3], f'Cannot interpret as grayscale or rgb, pass a channel index'
+            print(f'No channel specified; interpreting multichannel image as grayscale or rgb')
+        else:
+            img = img[:, :, :, chan]
         self._ylen = img.shape[2]
-        self._things_path = f'{os.path.splitext(path)[0]}.{descriptor}'
+        self._things_path = f'{os.path.splitext(path)[0]}.{desc}'
 
         # Load existing things if exists
         things = []
         if os.path.isfile(self._things_path):
-            print(f'Loading {descriptor} from {self._things_path}')
+            print(f'Loading {desc} from {self._things_path}')
             things = pickle.load(open(self._things_path, 'rb'))
         # Account for pyqtgraph orientation
         things = [t.flipy(self._ylen) for t in things]
 
         pg.setConfigOptions(antialias=True, useOpenGL=False)
-        self.setWindowTitle(f'{descriptor} segmentor')
+        self.setWindowTitle(f'{desc} segmentor')
         self._seg = segmentor
         self.setCentralWidget(segmentor)
         self._seg.setData(img, things=things)
