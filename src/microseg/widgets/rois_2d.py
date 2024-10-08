@@ -7,7 +7,7 @@ from qtpy.QtWidgets import QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsEll
 import pyqtgraph as pg
 
 from matgeo.plane import PlanarPolygon
-from matgeo.ellipsoid import Sphere
+from matgeo.ellipsoid import Circle, Ellipsoid
 
 from .base import *
 from microseg.utils import pg_colors
@@ -55,6 +55,11 @@ class LabeledThing(abc.ABC):
         ''' This is needed because of Pyqtgraph's insane orientation defaults '''
         pass
 
+    @abc.abstractmethod
+    def __add__(self, offset: np.ndarray):
+        ''' This is needed because of Pyqtgraph's insane orientation defaults '''
+        pass
+
 class LabeledPolygon(PlanarPolygon, LabeledThing):
     def __init__(self, l: int, vertices: np.ndarray, **kwargs):
         PlanarPolygon.__init__(self, vertices, **kwargs)
@@ -88,9 +93,9 @@ class SelectablePolygonItem(QGraphicsPolygonItem, SelectableItem):
         ]), *args, label=poly.l, **kwargs)
         self._poly = poly
 
-class LabeledCircle(Sphere, LabeledThing):
+class LabeledCircle(Circle, LabeledThing):
     def __init__(self, l: int, v: np.ndarray, r: float):
-        Sphere.__init__(self, v, r)
+        Circle.__init__(self, v, r)
         LabeledThing.__init__(self, l)
 
     def copy(self) -> 'LabeledCircle':
@@ -100,9 +105,13 @@ class LabeledCircle(Sphere, LabeledThing):
         return self.l == other.l and np.allclose(self.v, other.v) and np.allclose(self.M, other.M)
 
     def flipy(self, yval: float) -> 'LabeledCircle':
-        v = self.v.copy()
-        v[1] = yval - v[1]
-        return LabeledCircle(self.l, v, self.r)
+        circ = super().flipy(yval)
+        return LabeledCircle(self.l, circ.v, circ.r)
+    
+    @staticmethod
+    def from_ellipse(l: int, ell: Ellipsoid) -> 'LabeledCircle':
+        circ = Circle.from_ellipse(ell)
+        return LabeledCircle(l, circ.v, circ.r)
 
 class SelectableCircleItem(QGraphicsEllipseItem, SelectableItem):
 

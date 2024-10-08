@@ -4,7 +4,16 @@ Manual circles segmentor
 from .widgets.seg_2d import *
 from .utils.data import *
 
+from matgeo import Ellipsoid
+
 class CirclesSegmentorWidget(ThingSegmentorWidget):
+    def setData(self, img, things):
+        # Allow casting of general ellipsoids
+        if len(things) > 0 and (not type(things[0]) is LabeledCircle):
+            assert isinstance(things[0], Ellipsoid)
+            things = [LabeledCircle.from_ellipse(i, p) for i, p in enumerate(things)]
+        super().setData(img, things)
+    
     def makeWidget(*args, **kwargs):
         return CirclesImageWidget(*args, **kwargs)
 

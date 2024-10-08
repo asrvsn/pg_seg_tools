@@ -9,11 +9,13 @@ from qtpy import QtCore
 from qtpy import QtWidgets
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import QShortcut
+from qtpy.QtGui import QGuiApplication
 import pickle
 
 import microseg.utils.mask as mutil
 from microseg.utils.colors import *
 from microseg.utils.data import *
+from matgeo import Sphere
 from .rois_2d import *
 
 '''
@@ -318,7 +320,7 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         # State
         self._things: List[LabeledThing] = []
         self._items: List[SelectableItem] = []
-        self._selected: int = None
+        self._selected = []
         self._shortcuts = []
         self._vb = None
         self._reset_drawing_state()
@@ -354,7 +356,7 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
 
     def setThings(self, things: List[LabeledThing], reset_stacks: bool=True):
         # Remove previous things
-        self._selected = None
+        self._selected = []
         self._things = things
         for item in self._items:
             self.removeItem(item)
@@ -376,22 +378,30 @@ class ThingsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     def _listenItem(self, i: int, item: SelectableItem):
         item.sigClicked.connect(lambda: self._select(i))
 
-    def _select(self, i: int):
-        print(f'Selecting {i}')
-        if i != self._selected:
-            if not i is None:
-                self._items[i].select()
-            if not self._selected is None:
-                self._items[self._selected].unselect()
-            self._selected = i
+    def _select(self, i: Optional[int]):
+        if i is None:
+            self._unselect_all()
+        if not i in self._selected:
+            if not QGuiApplication.keyboardModifiers() & Qt.ShiftModifier:
+                self._unselect_all()
+            self._selected.append(i)
+            self._items[i].select()
+        print(f'Selected: {self._selected}')
+
+    def _unselect_all(self):
+        for i in self._selected:
+            self._items[i].unselect()
+        self._selected = []
 
     def _delete(self):
-        print('delete')
-        if self._editable and not self._selected is None:
-            self._things.pop(self._selected)
-            item = self._items.pop(self._selected)
-            self.removeItem(item)
-            self._selected = None
+        if self._editable and len(self._selected) > 0:
+            print(f'delete {len(self._selected)} things')
+            for i in self._selected:
+                self.removeItem(self._items[i])
+            selset = set(self._selected)
+            self._things = [t for i, t in enumerate(self._things) if not i in selset]
+            self._items = [t for i, t in enumerate(self._items) if not i in selset]
+            self._selected = []
             self._push_stack()
 
     def _edit(self):
@@ -657,7 +667,8 @@ class ThingsSegmentorWindow(MainWindow):
             print(f'No channel specified; interpreting multichannel image as grayscale or rgb')
         else:
             img = img[:, :, :, chan]
-        self._ylen = img.shape[2]
+        self._img = img # ZXY
+        self._xlen, self._ylen = img.shape[1], img.shape[2]
         self._things_path = f'{os.path.splitext(path)[0]}.{desc}'
 
         # Load existing things if exists
@@ -665,8 +676,7 @@ class ThingsSegmentorWindow(MainWindow):
         if os.path.isfile(self._things_path):
             print(f'Loading {desc} from {self._things_path}')
             things = pickle.load(open(self._things_path, 'rb'))
-        # Account for pyqtgraph orientation
-        things = [t.flipy(self._ylen) for t in things]
+        things = self._toPyQtGraph(things)
 
         pg.setConfigOptions(antialias=True, useOpenGL=False)
         self.setWindowTitle(f'{desc} segmentor')
@@ -678,9 +688,23 @@ class ThingsSegmentorWindow(MainWindow):
         # Listeners
         self._seg.saved.connect(self._save)
 
+    def _toPyQtGraph(self, things: List[LabeledThing]):
+        '''
+        Transform things appropriately for rendering in pyqtgraph's weird orientation defaults
+        '''
+        offset = np.array([0, self._ylen-self._xlen])
+        things = [(t + offset).flipy(self._ylen) for t in things]
+        return things
+    
+    def _fromPyQtGraph(self, things: List[LabeledThing]):
+        ''' 
+        Transform things appropriately for rendering in pyqtgraph's weird orientation defaults
+        '''
+        offset = np.array([0, self._ylen-self._xlen])
+        return [t.flipy(self._ylen) - offset for t in things]
+
     def _save(self):
         things = self._seg.getData()
-        # Account for pyqtgraph orientation
-        things = [t.flipy(self._ylen) for t in things]
+        things = self._fromPyQtGraph(things)
         pickle.dump(things, open(self._things_path, 'wb'))
         print(f'Saved {self._descriptor} to {self._things_path}')
