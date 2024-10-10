@@ -3,6 +3,7 @@ Image + ROI overlays
 - Support for manually drawing polygons
 - Support for semi-automatically drawing polygons via standard segmentation algorithms (cellpose, watershed, etc.)
 '''
+from typing import Set
 
 from .pg import *
 from .roi import *
@@ -12,7 +13,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     Editable widget for displaying and drawing ROIs on an image
     '''
     proposeAdd = QtCore.Signal(List[PlanarPolygon]) # Add polygons
-    proposeDelete = QtCore.Signal(List[int]) # Delete by label
+    proposeDelete = QtCore.Signal(Set[int]) # Delete by label
     proposeUndo = QtCore.Signal()
     proposeRedo = QtCore.Signal()
 
@@ -90,7 +91,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     def _delete(self):
         if self._editable and len(self._selected) > 0:
             print(f'propose delete {len(self._selected)} things')
-            self.proposeDelete.emit(list(set(self._selected)))
+            self.proposeDelete.emit(set(self._selected))
 
     def _edit(self):
         print('edit')
