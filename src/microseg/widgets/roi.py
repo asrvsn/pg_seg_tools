@@ -36,22 +36,36 @@ class LabeledROI:
     def __add__(self, offset: np.ndarray):
         ''' This is needed because of Pyqtgraph's insane orientation defaults '''
         return LabeledROI(self.lbl, self.roi + offset)
+    
+    def to_item(self) -> 'LabeledROIItem':
+        if type(self.roi) is PlanarPolygon:
+            return LabeledPolygonItem(self)
+        elif type(self.roi) is Ellipse:
+            return LabeledEllipseItem(self)
+        elif type(self.roi) is Circle:
+            return LabeledCircleItem(self)
+        else:
+            raise NotImplementedError
 
 '''
 ROI Items (for adding to Qt widgets)
 '''
 
-class SelectableROIItem:
-    def __init__(self, lroi: LabeledROI, selectable: bool=True):
+class LabeledROIItem:
+    def __init__(self, lroi: LabeledROI, selectable: bool=True, show_label: bool=True):
         self._lroi = lroi
-        self._pen = pg_colors.cc_pens[lroi.lbl % pg_colors.n_pens]
-        self._hpen = pg_colors.cc_pens_hover[lroi.lbl % pg_colors.n_pens]
         self._selected = False
-        self.setPen(self._pen)
+        self._set_pens(show_label=show_label)
         if selectable:
             self._proxy = ClickProxy()
             self.sigClicked = self._proxy.sigClicked
             self.setAcceptHoverEvents(True)
+
+    def _set_pens(self, show_label: bool=True):
+        i = self._lroi.lbl % pg_colors.n_pens if show_label else 65
+        self._pen = pg_colors.cc_pens[i]
+        self._hpen = pg_colors.cc_pens_hover[i]
+        self.setPen(self._pen)
 
     def hoverEnterEvent(self, event):
         self.setPen(self._hpen)
@@ -72,14 +86,17 @@ class SelectableROIItem:
         self._selected = False
         self.setPen(self._pen)
 
-class SelectablePolygonItem(QGraphicsPolygonItem, SelectableROIItem):
+    def to_roi(self) -> LabeledROI:
+        return self._lroi
+
+class LabeledPolygonItem(QGraphicsPolygonItem, LabeledROIItem):
     def __init__(self, lroi: LabeledROI, *args, **kwargs):
         # Both constructors get called automatically, so pass the named one explicitly
         super().__init__(pg.QtGui.QPolygonF([
             QtCore.QPointF(p[0], p[1]) for p in lroi.vertices
         ]), *args, lroi=lroi, **kwargs)
 
-class SelectableEllipseItem(QGraphicsEllipseItem, SelectableROIItem):
+class LabeledEllipseItem(QGraphicsEllipseItem, LabeledROIItem):
     def __init__(self, lroi: LabeledROI, *args, **kwargs):
         # Both constructors get called automatically, so pass the named one explicitly
         super().__init__(*args, lroi=lroi, **kwargs)
@@ -92,7 +109,7 @@ class SelectableEllipseItem(QGraphicsEllipseItem, SelectableROIItem):
         self.setTransformOriginPoint(QtCore.QPointF(x+hr, y+vr)) # Transform about ellipse center
         self.setRotation(theta*180/np.pi) # Rotate onto basis P
 
-class SelectableCircleItem(QGraphicsEllipseItem, SelectableROIItem):
+class LabeledCircleItem(QGraphicsEllipseItem, LabeledROIItem):
     def __init__(self, lroi: LabeledROI, *args, **kwargs):
         # Both constructors get called automatically, so pass the named one explicitly
         super().__init__(*args, lroi=lroi, **kwargs) 

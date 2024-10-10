@@ -320,10 +320,10 @@ class CirclesImageWidget(ThingsImageWidget):
         self._usePoly = not self._usePoly
         print(f'Using poly: {self._usePoly}')
     
-    def createItemFromThing(self, circ: LabeledCircle) -> SelectableCircleItem:
-        return SelectableCircleItem(circ)
+    def createItemFromThing(self, circ: LabeledCircle) -> LabeledCircleItem:
+        return LabeledCircleItem(circ)
     
-    def getThingFromItem(self, item: SelectableCircleItem) -> LabeledCircle:
+    def getThingFromItem(self, item: LabeledCircleItem) -> LabeledCircle:
         return item._circ
 
     def initDrawingState(self):
@@ -374,10 +374,10 @@ class PolysImageWidget(ThingsImageWidget):
         self._hullify = not self._hullify
         print(f'Hullify: {self._hullify}')
     
-    def createItemFromThing(self, poly: LabeledPolygon) -> SelectablePolygonItem:
-        return SelectablePolygonItem(poly)
+    def createItemFromThing(self, poly: LabeledPolygon) -> LabeledPolygonItem:
+        return LabeledPolygonItem(poly)
     
-    def getThingFromItem(self, item: SelectablePolygonItem) -> LabeledPolygon:
+    def getThingFromItem(self, item: LabeledPolygonItem) -> LabeledPolygon:
         return item._poly
     
     def initDrawingState(self):
@@ -390,7 +390,7 @@ class PolysImageWidget(ThingsImageWidget):
             if not self._drawn_item is None:
                 self.removeItem(self._drawn_item)
             poly = LabeledPolygon(self._drawn_lbl, vertices, use_chull_if_invalid=True)
-            self._drawn_item = SelectablePolygonItem(poly)
+            self._drawn_item = LabeledPolygonItem(poly)
             self.addItem(self._drawn_item)
 
     def finishDrawingState(self):
