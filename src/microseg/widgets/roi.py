@@ -120,16 +120,16 @@ class LabeledPolygonItem(QGraphicsPolygonItem, LabeledROIItem):
     def __init__(self, lroi: LabeledROI, *args, **kwargs):
         # Both constructors get called automatically, so pass the named one explicitly
         super().__init__(pg.QtGui.QPolygonF([
-            QtCore.QPointF(p[0], p[1]) for p in lroi.vertices
+            QtCore.QPointF(p[0], p[1]) for p in lroi.roi.vertices
         ]), *args, lroi=lroi, **kwargs)
 
 class LabeledEllipseItem(QGraphicsEllipseItem, LabeledROIItem):
     def __init__(self, lroi: LabeledROI, *args, **kwargs):
         # Both constructors get called automatically, so pass the named one explicitly
         super().__init__(*args, lroi=lroi, **kwargs)
-        P, rs = lroi.get_axes_stretches()
+        P, rs = lroi.roi.get_axes_stretches()
         hr, vr = rs
-        x, y = lroi.v
+        x, y = lroi.roi.v
         self.setRect(x-hr, y-vr, 2*hr, 2*vr)
         P = P.T
         theta = np.arctan2(P[1,0], P[0,0]) # Angle from orthogonal matrix P.T
@@ -143,5 +143,5 @@ class LabeledCircleItem(QGraphicsEllipseItem, LabeledROIItem):
         self.setRadius(lroi.r)
 
     def setRadius(self, r: float):
-        self.setRect(self._lroi.v[0]-r, self._lroi.v[1]-r, 2*r, 2*r)
-        self._lroi.r = r
+        self.setRect(self._lroi.roi.v[0]-r, self._lroi.roi.v[1]-r, 2*r, 2*r)
+        self._lroi.roi.r = r

@@ -57,7 +57,7 @@ class ImageSegmentorApp(SaveableApp):
         # Allow flat-list of ROIs for 1-stack images
         if not type(rois[0]) is list:
             rois = [rois]
-        # Allow unlabled ROIs
+        # Allow unlabeled ROIs
         lbl = max([max([r.lbl for r in subrois if type(r) is LabeledROI], default=0) for subrois in rois], default=0) + 1
         for subrois in rois:
             for i, r in enumerate(subrois):
@@ -85,14 +85,14 @@ class ImageSegmentorApp(SaveableApp):
     @property
     def next_label(self) -> int:
         return max(
-            [max([r.lbl for r in subrois], default=0) 
+            [max([r.lbl for r in subrois], default=-1) 
              for subrois in self._rois], 
-            default=0
-        )
+            default=-1
+        ) + 1
 
     def _add(self, rois: List[ROI]):
         l = self.next_label
-        lrois = [LabeledROI(l, r) for r in rois]
+        lrois = [LabeledROI(l+i, r) for i, r in enumerate(rois)]
         self._rois[self._z].extend(lrois)
         self._refresh_ROIs()
         self.pushEdit()

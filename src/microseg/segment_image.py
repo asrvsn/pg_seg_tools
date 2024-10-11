@@ -4,7 +4,7 @@ Image segmentor
 if __name__ == '__main__':
     import sys
     import argparse
-    
+
     from .widgets.roi_apps import *
 
     parser = argparse.ArgumentParser()
@@ -12,7 +12,7 @@ if __name__ == '__main__':
     parser.add_argument('-d', type=str, default='polygons', help='Descriptor')
     args = parser.parse_args()
 
-    app = QtWidgets.QApplication(sys.argv)
-    win = ImageSegmentorApp(args.file, desc=args.d)
-    win.show()
-    sys.exit(app.exec())
+    win = QtWidgets.QApplication(sys.argv)
+    app = ImageSegmentorApp(args.file, desc=args.d)
+    app.show()
+    sys.exit(win.exec())
