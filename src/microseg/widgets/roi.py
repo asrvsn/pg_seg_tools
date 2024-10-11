@@ -8,6 +8,7 @@ from qtpy import QtCore
 from qtpy.QtWidgets import QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsEllipseItem, QGraphicsItem
 import pyqtgraph as pg
 from abc import ABC, abstractmethod
+import pdb
 
 from matgeo.plane import PlanarPolygon
 from matgeo.ellipsoid import Circle, Ellipsoid, Ellipse
@@ -30,15 +31,12 @@ class LabeledROI:
         return LabeledROI(self.lbl, self.roi.copy())
 
     def flipy(self, yval: float) -> 'LabeledROI':
-        ''' This is needed because of Pyqtgraph's insane orientation defaults '''
         return LabeledROI(self.lbl, self.roi.flipy(yval))
 
     def __add__(self, offset: np.ndarray):
-        ''' This is needed because of Pyqtgraph's insane orientation defaults '''
         return LabeledROI(self.lbl, self.roi + offset)
     
     def __sub__(self, offset: np.ndarray):
-        ''' This is needed because of Pyqtgraph's insane orientation defaults '''
         return LabeledROI(self.lbl, self.roi - offset)
     
     def toItem(self, img_shape: Tuple[int, int]) -> 'LabeledROIItem':
@@ -140,7 +138,7 @@ class LabeledCircleItem(QGraphicsEllipseItem, LabeledROIItem):
     def __init__(self, lroi: LabeledROI, *args, **kwargs):
         # Both constructors get called automatically, so pass the named one explicitly
         super().__init__(*args, lroi=lroi, **kwargs) 
-        self.setRadius(lroi.r)
+        self.setRadius(lroi.roi.r)
 
     def setRadius(self, r: float):
         self.setRect(self._lroi.roi.v[0]-r, self._lroi.roi.v[1]-r, 2*r, 2*r)

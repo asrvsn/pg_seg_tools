@@ -16,7 +16,7 @@ import microseg.utils.mask as mutil
 from microseg.utils.colors import *
 from microseg.utils.data import *
 from matgeo import Sphere
-from .rois import *
+from .roi import *
 
 '''
 Functions
@@ -89,8 +89,7 @@ class ImagePlotWidget(NoTouchPlotWidget):
         # Set the new range
         vb.setRange(xRange=new_x_range, yRange=new_y_range, padding=0)
 
-    @property
-    def shape(self) -> Tuple[int, int]:
+    def _shape(self) -> Tuple[int, int]:
         return self._img.image.shape[:2]
 
 class MaskItem(ImageItem):

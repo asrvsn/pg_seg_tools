@@ -13,8 +13,8 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     '''
     Editable widget for displaying and drawing ROIs on an image
     '''
-    proposeAdd = QtCore.Signal(List[PlanarPolygon]) # Add polygons
-    proposeDelete = QtCore.Signal(Set[int]) # Delete by label
+    proposeAdd = QtCore.Signal(object) # List[PlanarPolygon]
+    proposeDelete = QtCore.Signal(object) # Set[int]
 
     def __init__(self, editable: bool=False, **kwargs):
         super().__init__(**kwargs)
@@ -57,7 +57,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         # Add new rois
         self._items = []
         for i, roi in enumerate(rois):
-            item = roi.toItem(self.shape)
+            item = roi.toItem(self._shape())
             self.addItem(item)
             self._listen_item(i, item)
             self._items.append(item)
@@ -114,8 +114,6 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     def _reset_drawing_state(self):
         self._init_drawing_state()
         self._is_drawing = False
-        if not self._drawn_item is None:
-            self.removeItem(self._drawn_item)
         self._drawn_item = None
         if not self._vb is None:
             self._vb.setMouseEnabled(x=True, y=True)
@@ -127,8 +125,8 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         if vertices.shape[0] > 2:
             if not self._drawn_item is None:
                 self.removeItem(self._drawn_item)
-            lroi = LabeledROI(65, PlanarPolygon(vertices, use_chull_if_invalid=True)).fromPyQTOrientation(self.shape)
-            self._drawn_item = lroi.toItem(self.shape) # Original vertices already in PyQT orientation, do the identity transform
+            lroi = LabeledROI(65, PlanarPolygon(vertices, use_chull_if_invalid=True)).fromPyQTOrientation(self._shape())
+            self._drawn_item = lroi.toItem(self._shape()) # Original vertices already in PyQT orientation, do the identity transform
             self.addItem(self._drawn_item)
 
     def _mouse_move(self, pos):
@@ -140,7 +138,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             else:
                 if not self._drawn_item is None:
                     print('ending draw')
-                    poly = self._drawn_item.toROI(self.shape).roi
+                    poly = self._drawn_item.toROI(self._shape()).roi
                     self._reset_drawing_state()
                     print('propose add 1 poly manually')
                     self.proposeAdd.emit([poly])
@@ -153,8 +151,8 @@ class ROIsCreator(PaneledWidget):
     - channel selector for image
     Expects image in XYC format
     '''
-    proposeAdd = QtCore.Signal(List[ROI])
-    proposeDelete = QtCore.Signal(Set[int])
+    proposeAdd = QtCore.Signal(object) # List[ROI]
+    proposeDelete = QtCore.Signal(object) # Set[int]
     AVAIL_MODES = [
         ('Polygon', lambda self, polys: [
             p.hullify() if self._use_chull else p for p in polys
@@ -172,20 +170,29 @@ class ROIsCreator(PaneledWidget):
         # Widgets
         self._image = ROIsImageWidget(editable=True)
         self._main_layout.addWidget(self._image)
-        self._settings_layout.addWidget(QLabel('Mode:'))
+        self._bottom_layout.addWidget(QLabel('Mode:'))
         self._mode_btns = []
         for i in range(len(self.AVAIL_MODES)):
             self._add_mode(i)
         self._chull_box = QCheckBox('Convex hull')
-        self._settings_layout.addWidget(self._chull_box)
+        self._bottom_layout.addWidget(self._chull_box)
         self._rgb_box = QCheckBox('Interpret RGB')
-        self._settings_layout.addWidget(self._rgb_box)
+        self._bottom_layout.addWidget(self._rgb_box)
         self._rgb_box.hide()
         self._chan_slider = IntegerSlider(mode='scroll')
-        self._settings_layout.addWidget(self._chan_slider)
+        self._bottom_layout.addWidget(self._chan_slider)
         self._chan_slider.hide()
         self._count_lbl = QLabel()
-        self._settings_layout.addWidget(self._count_lbl)
+        self._bottom_layout.addWidget(self._count_lbl)
+
+        # State
+        self._mode = 0
+        self._img = None
+        self._mode_btns[self._mode].setChecked(True)
+        self._chull_box.setChecked(True)
+        self._rgb_box.setChecked(True)
+        self._chan_slider.setData(0, 255, 0)
+        self._update_settings(redraw=False)
 
         # Listeners
         self._chull_box.stateChanged.connect(lambda _: self._update_settings(redraw=False))
@@ -194,15 +201,6 @@ class ROIsCreator(PaneledWidget):
         # Bubble up other signals
         self._image.proposeAdd.connect(lambda polys: self.proposeAdd.emit(self._make_rois(polys)))
         self._image.proposeDelete.connect(self.proposeDelete.emit)
-
-        # State
-        self._mode = 0
-        self._mode_btns[self._mode].setChecked(True)
-        self._chull_box.setChecked(True)
-        self._rgb_box.setChecked(True)
-        self._chan_slider.setData(0, 255, 0)
-        self._update_settings(redraw=False)
-        self._img = None
 
     ''' API methods '''
 
@@ -240,7 +238,7 @@ class ROIsCreator(PaneledWidget):
         mode, _ = self.AVAIL_MODES[i]
         btn = QRadioButton(mode)
         self._mode_btns.append(btn)
-        self._settings_layout.addWidget(btn)
+        self._bottom_layout.addWidget(btn)
         btn.clicked.connect(lambda: self._set_mode(i))
 
     def _set_mode(self, i: int):

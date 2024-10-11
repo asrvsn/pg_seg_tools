@@ -29,7 +29,7 @@ class ImageSegmentorApp(SaveableApp):
         else:
             print(f'Received z-stack with {self._zmax} slices, enabling z-slider')
             self._z_slider.setData(0, self._zmax-1, self._z)
-        self.setCentralWidget(self._main)
+        self._creator.setImage(self._img[self._z])
 
         # Listeners
         self._creator.proposeAdd.connect(self._add)
@@ -41,6 +41,7 @@ class ImageSegmentorApp(SaveableApp):
             f'Image {desc} segmentor',
             f'{os.path.splitext(img_path)[0]}.{desc}',
         *args, **kwargs)
+        self.setCentralWidget(self._main)
 
     ''' Overrides '''
 

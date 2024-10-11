@@ -320,6 +320,7 @@ class IntegerSlider(HLayoutWidget):
 
         self._slider.valueChanged.connect(lambda x: self._label.setText(f'{x}/{self._max}'))
         self.valueChanged = self._slider.valueChanged
+        self.value = self._slider.value
 
     def setData(self, min: int, max: int, x: int):
         assert min <= x <= max, 'x must be within min and max'
