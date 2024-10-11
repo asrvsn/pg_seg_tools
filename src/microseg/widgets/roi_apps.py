@@ -52,11 +52,25 @@ class ImageSegmentorApp(SaveableApp):
     def copyFromState(self) -> List[List[ROI]]:
         return [[r.copy() for r in subrois] for subrois in self._rois]
 
-    def readData(path: str) -> List[List[ROI]]:
-        return pickle.load(open(path, 'rb'))
+    def readData(self, path: str) -> List[List[ROI]]:
+        rois = pickle.load(open(path, 'rb'))
+        # Allow flat-list of ROIs for 1-stack images
+        if not type(rois[0]) is list:
+            rois = [rois]
+        # Allow unlabled ROIs
+        lbl = max([max([r.lbl for r in subrois if type(r) is LabeledROI], default=0) for subrois in rois], default=0) + 1
+        for subrois in rois:
+            for i, r in enumerate(subrois):
+                if not type(r) is LabeledROI:
+                    subrois[i] = LabeledROI(lbl, r)
+                    lbl += 1
+        return rois
     
-    def writeData(path: str, data: List[List[ROI]]):
-        pickle.dump(data, open(path, 'wb'))
+    def writeData(self, path: str, rois: List[List[ROI]]):
+        # Write flat-list of ROIs for 1-stack images
+        if self._zmax == 1:
+            rois = rois[0]
+        pickle.dump(rois, open(path, 'wb'))
 
     ''' Private methods '''
 

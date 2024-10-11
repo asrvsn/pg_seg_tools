@@ -260,5 +260,5 @@ class ROIsCreator(PaneledWidget):
     def _set_count(self, n: int):
         self._count_lbl.setText(f'Objects: {n}')
         
-    def _make_rois(self, polys: List[PlanarPolygon]):
+    def _make_rois(self, polys: List[PlanarPolygon]) -> List[ROI]:
         return self.AVAIL_MODES[self._mode][1](self, polys)
