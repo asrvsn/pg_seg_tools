@@ -109,12 +109,12 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
         super().__init__(*args, **kwargs)
         self._title = title
         self._save_path = save_path
-        self.markEdited(False)
+        self._mark_edited(False)
 
         # Load existing data if exists
         if os.path.isfile(self._save_path):
             print(f'Loading existing data from {self._save_path}')
-            self.copyIntoState(SaveableApp.readData(self._save_path))
+            self.copyIntoState(self.readData(self._save_path))
 
         # Add Save menu item
         mbar = self.menuBar()
@@ -142,19 +142,11 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
 
     ''' API methods '''
 
-    def markEdited(self, bit: bool):
-        '''
-        Specify when an edit is made
-        '''
-        self._is_edited = bit
-        title = f'{self._title} (edited)' if bit else self._title
-        self.setWindowTitle(title)
-
-    def makeEdit(self):
+    def pushEdit(self):
         self._undo_stack.append(self.copyFromState())
         self._undo_stack = self._undo_stack[-self.undo_n:]
         self._redo_stack = []
-        self.markEdited(True)
+        self._mark_edited(True)
 
     ''' Abstract methods '''
 
@@ -172,22 +164,28 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
         '''
         pass
 
-    @staticmethod
     @abc.abstractmethod
     def readData(path: str) -> Any:
         pass
 
-    @staticmethod
     @abc.abstractmethod
     def writeData(path: str, data: Any):
         pass
 
     ''' Private listener methods '''
 
+    def _mark_edited(self, bit: bool):
+        '''
+        Specify when an edit is made
+        '''
+        self._is_edited = bit
+        title = f'{self._title} (edited)' if bit else self._title
+        self.setWindowTitle(title)
+
     def _save(self):
         print(f'Saving data to {self._save_path}')
-        SaveableApp.writeData(self._save_path, self.copyFromState())
-        self.markEdited(False)
+        self.writeData(self._save_path, self.copyFromState())
+        self._mark_edited(False)
 
     def _undo(self):
         print('undo')
@@ -195,7 +193,7 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
             self._redo_stack.append(self._undo_stack[-1])
             self._undo_stack = self._undo_stack[:-1]
             self.copyIntoState(self._undo_stack[-1])
-            self.markEdited(True)
+            self._mark_edited(True)
         else:
             print('Cannot undo further')
 
@@ -205,7 +203,7 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
             self._undo_stack.append(self._redo_stack[-1])
             self._redo_stack = self._redo_stack[:-1]
             self.copyIntoState(self._undo_stack[-1])
-            self.markEdited(True)
+            self._mark_edited(True)
         else:
             print('Cannot redo further')
 

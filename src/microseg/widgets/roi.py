@@ -41,7 +41,7 @@ class LabeledROI:
         ''' This is needed because of Pyqtgraph's insane orientation defaults '''
         return LabeledROI(self.lbl, self.roi - offset)
     
-    def to_item(self, img_shape: Tuple[int, int]) -> 'LabeledROIItem':
+    def toItem(self, img_shape: Tuple[int, int]) -> 'LabeledROIItem':
         '''
         Converts to item and appropriately transforms to pyqtgraph's orientation defaults
         '''
@@ -110,7 +110,7 @@ class LabeledROIItem:
         self._selected = False
         self.setPen(self._pen)
 
-    def to_roi(self, img_shape: Tuple[int, int]) -> LabeledROI:
+    def toROI(self, img_shape: Tuple[int, int]) -> LabeledROI:
         '''
         Converts to ROI and appropriately transforms back from pyqtgraph's orientation defaults
         '''
