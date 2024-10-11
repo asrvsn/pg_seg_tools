@@ -89,6 +89,10 @@ class ImagePlotWidget(NoTouchPlotWidget):
         # Set the new range
         vb.setRange(xRange=new_x_range, yRange=new_y_range, padding=0)
 
+    @property
+    def shape(self) -> Tuple[int, int]:
+        return self._img.image.shape[:2]
+
 class MaskItem(ImageItem):
     '''
     Image mask as widget
@@ -491,12 +495,10 @@ class ThingsSegmentorWindow(MainWindow):
             things = pickle.load(open(self._things_path, 'rb'))
         things = self._toPyQtGraph(things)
 
-        pg.setConfigOptions(antialias=True, useOpenGL=False)
         self.setWindowTitle(f'{desc} segmentor')
         self._seg = segmentor
         self.setCentralWidget(segmentor)
         self._seg.setData(img, things=things)
-        self.resizeToActiveScreen()
 
         # Listeners
         self._seg.saved.connect(self._save)

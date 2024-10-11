@@ -37,7 +37,15 @@ class LabeledROI:
         ''' This is needed because of Pyqtgraph's insane orientation defaults '''
         return LabeledROI(self.lbl, self.roi + offset)
     
-    def to_item(self) -> 'LabeledROIItem':
+    def __sub__(self, offset: np.ndarray):
+        ''' This is needed because of Pyqtgraph's insane orientation defaults '''
+        return LabeledROI(self.lbl, self.roi - offset)
+    
+    def to_item(self, img_shape: Tuple[int, int]) -> 'LabeledROIItem':
+        '''
+        Converts to item and appropriately transforms to pyqtgraph's orientation defaults
+        '''
+        self = self.toPyQTOrientation(img_shape)
         if type(self.roi) is PlanarPolygon:
             return LabeledPolygonItem(self)
         elif type(self.roi) is Ellipse:
@@ -46,7 +54,23 @@ class LabeledROI:
             return LabeledCircleItem(self)
         else:
             raise NotImplementedError
-
+        
+    def toPyQTOrientation(self, img_shape: Tuple[int, int]) -> 'LabeledROI':
+        '''
+        Transform appropriately for rendering in pyqtgraph's weird orientation defaults
+        '''
+        xlen, ylen = img_shape
+        offset = np.array([0, ylen-xlen])
+        return (self + offset).flipy(ylen)
+    
+    def fromPyQTOrientation(self, img_shape: Tuple[int, int]) -> 'LabeledROI':
+        '''
+        Transform appropriately for rendering in pyqtgraph's weird orientation defaults
+        '''
+        xlen, ylen = img_shape
+        offset = np.array([0, ylen-xlen])
+        return self.flipy(ylen) - offset
+        
 '''
 ROI Items (for adding to Qt widgets)
 '''
@@ -86,8 +110,11 @@ class LabeledROIItem:
         self._selected = False
         self.setPen(self._pen)
 
-    def to_roi(self) -> LabeledROI:
-        return self._lroi
+    def to_roi(self, img_shape: Tuple[int, int]) -> LabeledROI:
+        '''
+        Converts to ROI and appropriately transforms back from pyqtgraph's orientation defaults
+        '''
+        return self._lroi.fromPyQTOrientation(img_shape)
 
 class LabeledPolygonItem(QGraphicsPolygonItem, LabeledROIItem):
     def __init__(self, lroi: LabeledROI, *args, **kwargs):

@@ -4,6 +4,7 @@ Image + ROI overlays
 - Support for semi-automatically drawing polygons via standard segmentation algorithms (cellpose, watershed, etc.)
 '''
 from typing import Set
+from qtpy.QtWidgets import QRadioButton, QLabel, QCheckBox, QComboBox
 
 from .pg import *
 from .roi import *
@@ -61,7 +62,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         # Add new rois
         self._items = []
         for i, roi in enumerate(rois):
-            item = roi.to_item()
+            item = roi.to_item(self.shape)
             self.addItem(item)
             self._listenItem(i, item)
             self._items.append(item)
@@ -127,7 +128,8 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         if vertices.shape[0] > 2:
             if not self._drawn_item is None:
                 self.removeItem(self._drawn_item)
-            self._drawn_item = LabeledROI(65, PlanarPolygon(vertices, use_chull_if_invalid=True)).to_item()
+            lroi = LabeledROI(65, PlanarPolygon(vertices, use_chull_if_invalid=True)).fromPyQTOrientation(self.shape)
+            self._drawn_item = lroi.to_item(self.shape) # Original vertices already in PyQT orientation, do the identity transform
             self.addItem(self._drawn_item)
 
     def _mouse_move(self, pos):
@@ -139,10 +141,96 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             else:
                 if not self._drawn_item is None:
                     print('ending draw')
-                    poly = self._drawn_item.to_roi().roi
+                    poly = self._drawn_item.to_roi(self.shape).roi
                     self._reset_drawing_state()
                     print('propose add 1 poly manually')
                     self.proposeAdd.emit([poly])
+
+class ROIsCreator(PaneledWidget):
+    '''
+    Thin wrapper around ROIsImageWidget for creating ROIs with several options
+    '''
+    proposeAdd = QtCore.Signal(List[ROI])
+    proposeDelete = QtCore.Signal(Set[int])
+    proposeUndo = QtCore.Signal()
+    proposeRedo = QtCore.Signal()
+    AVAIL_MODES = [
+        ('Polygon', lambda self, polys: [
+            p.hullify() if self._use_chull else p for p in polys
+        ]),
+        ('Ellipse', lambda self, polys: [
+            Ellipse.from_poly(p) for p in polys
+        ]),
+        ('Circle', lambda self, polys: [
+            Circle.from_poly(p) for p in polys
+        ]),
+    ]
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Widgets
+        self._image = ROIsImageWidget(editable=True)
+        self._main_layout.addWidget(self._image)
+        self._settings_layout.addWidget(QLabel('Mode:'))
+        self._mode_btns = []
+        for i in range(len(self.AVAIL_MODES)):
+            self._add_mode(i)
+        self._use_chull_box = QCheckBox('Convex hull')
+        self._settings_layout.addWidget(self._use_chull_box)
+
+        self._count_lbl = QLabel()
+        self._settings_layout.addWidget(self._count_lbl)
+
+        # Bubble up events
+        self._image.proposeAdd.connect(lambda polys: self.proposeAdd.emit(self._make_rois(polys)))
+        self._image.proposeDelete.connect(self.proposeDelete.emit)
+        self._image.proposeUndo.connect(self.proposeUndo.emit)
+        self._image.proposeRedo.connect(self.proposeRedo.emit)
+
+        # State
+        self._use_chull = True
+        self._use_chull_box.setChecked(self._use_chull)
+        self._mode = 0
+        self._mode_btns[self._mode].setChecked(True)
+        self._rois = []
+
+    def _add_mode(self, i: int):
+        mode, _ = self.AVAIL_MODES[i]
+        btn = QRadioButton(mode)
+        self._mode_btns.append(btn)
+        self._settings_layout.addWidget(btn)
+        btn.clicked.connect(lambda: self._set_mode(i))
+
+    def _set_mode(self, i: int):
+        self._mode = i
+        if self.AVAIL_MODES[i][0] == 'Polygon':
+            self._use_chull_box.show()
+        else:
+            self._use_chull_box.hide()
+        
+    # @property
+    # def next_label(self) -> int:
+    #     return 0 if len(self._rois) == 0 else (max(r.l for r in self._rois) + 1)
+        
+    def _make_rois(self, polys: List[PlanarPolygon]):
+        return self.AVAIL_MODES[self._mode][1](self, polys)
+        # lbl = self.next_label
+        # new_rois = [LabeledROI(i+lbl, r) for i, r in enumerate(new_rois)]
+        # self._rois.extend(new_rois)
+        # self._image.setROIs(self._rois)
+
+    # def delete(self, labels: Set[int]):
+    #     self._rois = [r for r in self._rois if not (r.l in labels)]
+    #     self._image.setROIs(self._rois)
+
+    def setData(self, img: np.ndarray, rois: List[LabeledROI]):
+        self._image.setData(img, rois)
+
+    def setImage(self, img: np.ndarray):
+        self._image.setImage(img)
+
+    def setROIs(self, rois: List[LabeledROI]):
+        self._image.setROIs(rois)
 
 class OldWidget:
     edited = QtCore.Signal()
