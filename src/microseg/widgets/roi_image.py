@@ -149,11 +149,10 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
 class ROIsCreator(PaneledWidget):
     '''
     Thin wrapper around ROIsImageWidget for creating ROIs with several options
+    Expects image in XYC format
     '''
     proposeAdd = QtCore.Signal(List[ROI])
     proposeDelete = QtCore.Signal(Set[int])
-    proposeUndo = QtCore.Signal()
-    proposeRedo = QtCore.Signal()
     AVAIL_MODES = [
         ('Polygon', lambda self, polys: [
             p.hullify() if self._use_chull else p for p in polys
@@ -175,24 +174,33 @@ class ROIsCreator(PaneledWidget):
         self._mode_btns = []
         for i in range(len(self.AVAIL_MODES)):
             self._add_mode(i)
-        self._use_chull_box = QCheckBox('Convex hull')
-        self._settings_layout.addWidget(self._use_chull_box)
-
+        self._chull_box = QCheckBox('Convex hull')
+        self._settings_layout.addWidget(self._chull_box)
+        self._rgb_box = QCheckBox('Interpret RGB')
+        self._settings_layout.addWidget(self._rgb_box)
+        self._rgb_box.hide()
+        self._chan_slider = IntegerSlider(mode='scroll')
+        self._settings_layout.addWidget(self._chan_slider)
+        self._chan_slider.hide()
         self._count_lbl = QLabel()
         self._settings_layout.addWidget(self._count_lbl)
 
-        # Bubble up events
+        # Listeners
+        self._chull_box.stateChanged.connect(lambda _: self._update_settings(redraw=False))
+        self._rgb_box.stateChanged.connect(lambda _: self._update_settings(redraw=True))
+        self._chan_slider.valueChanged.connect(lambda _: self._update_settings(redraw=True))
+        # Bubble up other signals
         self._image.proposeAdd.connect(lambda polys: self.proposeAdd.emit(self._make_rois(polys)))
         self._image.proposeDelete.connect(self.proposeDelete.emit)
-        self._image.proposeUndo.connect(self.proposeUndo.emit)
-        self._image.proposeRedo.connect(self.proposeRedo.emit)
 
         # State
-        self._use_chull = True
-        self._use_chull_box.setChecked(self._use_chull)
         self._mode = 0
         self._mode_btns[self._mode].setChecked(True)
-        self._rois = []
+        self._chull_box.setChecked(True)
+        self._rgb_box.setChecked(True)
+        self._chan_slider.setData(0, 255, 0)
+        self._update_settings(redraw=False)
+        self._img = None
 
     def _add_mode(self, i: int):
         mode, _ = self.AVAIL_MODES[i]
@@ -204,9 +212,19 @@ class ROIsCreator(PaneledWidget):
     def _set_mode(self, i: int):
         self._mode = i
         if self.AVAIL_MODES[i][0] == 'Polygon':
-            self._use_chull_box.show()
+            self._chull_box.show()
         else:
-            self._use_chull_box.hide()
+            self._chull_box.hide()
+
+    def _update_settings(self, redraw: bool=True):
+        self._use_chull = self._chull_box.isChecked()
+        self._interpret_rgb = self._rgb_box.isChecked()
+        self._chan = self._chan_slider.value()
+        if redraw:
+            self.setImage(self._img)
+
+    def _set_count(self, n: int):
+        self._count_lbl.setText(f'Objects: {n}')
         
     # @property
     # def next_label(self) -> int:
@@ -227,10 +245,29 @@ class ROIsCreator(PaneledWidget):
         self._image.setData(img, rois)
 
     def setImage(self, img: np.ndarray):
-        self._image.setImage(img)
+        assert img.ndim in [2, 3], 'Expected XY or XYC image'
+        if img.ndim == 2 or img.shape[2] == 1:
+            self._rgb_box.hide()
+            self._chan_slider.hide()
+            img = img if img.ndim == 2 else img[:, :, 0]
+            self._image.setImage(img)
+        else:
+            if img.shape[2] == 3:
+                self._rgb_box.show()
+                self._rgb_box.setChecked(self._interpret_rgb)
+            if self._interpret_rgb:
+                self._chan_slider.hide()
+                self._image.setImage(img)
+            else:
+                self._chan_slider.show()
+                cmax = img.shape[2] - 1
+                self._chan = min(self._chan, cmax)
+                self._chan_slider.setData(0, cmax, self._chan)
+                self._image.setImage(img[:, :, self._chan])
 
     def setROIs(self, rois: List[LabeledROI]):
         self._image.setROIs(rois)
+        self._set_count(len(rois))
 
 class OldWidget:
     edited = QtCore.Signal()

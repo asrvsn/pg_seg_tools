@@ -5,4 +5,4 @@ from .base import *
 from .pg import *
 from .roi_image import *
 
-class SingleImageROIApp(SaveableApp):
+class SingleImageROIApp(UndoableApp):

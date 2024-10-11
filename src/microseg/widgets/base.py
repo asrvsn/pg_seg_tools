@@ -9,7 +9,7 @@ from qtpy import QtCore
 from qtpy import QtGui, QtWidgets
 from qtpy.QtCore import Qt, QTimer, QObject
 from qtpy.QtWidgets import QApplication, QFileSystemModel, QHeaderView, QLabel, QSizePolicy, QTableWidget, QTreeView, QVBoxLayout, QWidget, QGraphicsOpacityEffect, QSlider, QScrollBar, QAction, QMessageBox
-from qtpy.QtGui import QKeySequence
+from qtpy.QtGui import QKeySequence, QShortcut
 from superqt import QRangeSlider
 
 from .layout import *
@@ -100,8 +100,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
 class SaveableApp(MainWindow, metaclass=QtABCMeta):
     '''
-    Saveable application with action menu item, warn on close, etc. Uses pickle.
+    Saveable application with action menu item, warn on close, undo/redo
     '''
+    undo_n: int=100
+    redo_n: int=100
+
     def __init__(self, title: str, save_path: str, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._title = title
@@ -111,29 +114,33 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
         # Load existing data if exists
         if os.path.isfile(self._save_path):
             print(f'Loading existing data from {self._save_path}')
-            self.setData(pickle.load(open(self._save_path, 'rb')))
+            self.copyIntoState(SaveableApp.readData(self._save_path))
 
         # Add Save menu item
         mbar = self.menuBar()
         fmenu = mbar.addMenu('File')
+        # oaction = QAction('Open', self)
+        # oaction.setShortcut(QtGui.QKeySequence('Ctrl+O'))
+        # oaction.triggered.connect(self._open)
+        # fmenu.addAction(oaction)
         saction = QAction('Save', self)
         saction.setShortcut(QtGui.QKeySequence('Ctrl+S'))
         saction.triggered.connect(self._save)
         fmenu.addAction(saction)
 
-    @abc.abstractmethod
-    def setData(self, data: Any):
-        '''
-        Set the data upon loading from disk
-        '''
-        pass
+        # Listeners
+        undo_sc = QShortcut(QKeySequence('Ctrl+Z'), self)
+        undo_sc.activated.connect(self._undo)
+        redo_sc = QShortcut(QKeySequence('Ctrl+Y'), self)
+        redo_sc.activated.connect(self._redo)
+        redo_sc_ = QShortcut(QKeySequence('Ctrl+Shift+Z'), self)
+        redo_sc_.activated.connect(self._redo)
 
-    @abc.abstractmethod
-    def getData(self) -> Any:
-        '''
-        Get data on save action
-        '''
-        pass
+        # State
+        self._undo_stack: List[Any] = []
+        self._redo_stack: List[Any] = []
+
+    ''' API methods '''
 
     def markEdited(self, bit: bool):
         '''
@@ -143,11 +150,64 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
         title = f'{self._title} (edited)' if bit else self._title
         self.setWindowTitle(title)
 
+    def makeEdit(self):
+        self._undo_stack.append(self.copyFromState())
+        self._undo_stack = self._undo_stack[-self.undo_n:]
+        self._redo_stack = []
+        self.markEdited(True)
+
+    ''' Abstract methods '''
+
+    @abc.abstractmethod
+    def copyIntoState(self, state: Any):
+        '''
+        COPY and load data into state
+        '''
+        pass
+
+    @abc.abstractmethod
+    def copyFromState(self) -> Any:
+        '''
+        COPY and load data from state
+        '''
+        pass
+
+    @staticmethod
+    @abc.abstractmethod
+    def readData(path: str) -> Any:
+        pass
+
+    @staticmethod
+    @abc.abstractmethod
+    def writeData(path: str, data: Any):
+        pass
+
+    ''' Private listener methods '''
+
     def _save(self):
-        data = self.getData()
         print(f'Saving data to {self._save_path}')
-        pickle.dump(data, open(self._save_path, 'wb'))
+        SaveableApp.writeData(self._save_path, self.copyFromState())
         self.markEdited(False)
+
+    def _undo(self):
+        print('undo')
+        if len(self._undo_stack) > 1:
+            self._redo_stack.append(self._undo_stack[-1])
+            self._undo_stack = self._undo_stack[:-1]
+            self.copyIntoState(self._undo_stack[-1])
+            self.markEdited(True)
+        else:
+            print('Cannot undo further')
+
+    def _redo(self):
+        print('redo')
+        if len(self._redo_stack) > 0:
+            self._undo_stack.append(self._redo_stack[-1])
+            self._redo_stack = self._redo_stack[:-1]
+            self.copyIntoState(self._undo_stack[-1])
+            self.markEdited(True)
+        else:
+            print('Cannot redo further')
 
     def closeEvent(self, event):
         if self._is_edited:
