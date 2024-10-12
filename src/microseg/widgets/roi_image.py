@@ -33,9 +33,6 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             self._add_sc('Delete', lambda: self._delete())
             self._add_sc('Backspace', lambda: self._delete())
             self._add_sc('E', lambda: self._edit())
-            self._add_sc('Ctrl+Z', lambda: self.proposeUndo.emit())
-            self._add_sc('Ctrl+Y', lambda: self.proposeRedo.emit())
-            self._add_sc('Ctrl+Shift+Z', lambda: self.proposeRedo.emit())
         self._add_sc('Escape', lambda: self._escape())
         self.scene().sigMouseMoved.connect(self._mouse_move)
 
@@ -76,7 +73,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     def _select(self, i: Optional[int]):
         if i is None:
             self._unselect_all()
-        if not i in self._selected:
+        elif not i in self._selected:
             if not QGuiApplication.keyboardModifiers() & Qt.ShiftModifier:
                 self._unselect_all()
             self._selected.append(i)
@@ -91,7 +88,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     def _delete(self):
         if self._editable and len(self._selected) > 0:
             print(f'propose delete {len(self._selected)} things')
-            self.proposeDelete.emit(set(self._selected))
+            self.proposeDelete.emit(set(self._items[i].lbl for i in self._selected))
 
     def _edit(self):
         print('edit')
@@ -134,11 +131,12 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             if QtCore.Qt.LeftButton & QtWidgets.QApplication.mouseButtons():
                 pos = self._vb.mapSceneToView(pos)
                 pos = np.array([pos.x(), pos.y()])
-                self.modifyDrawingState(pos)
+                self._modify_drawing_state(pos)
             else:
                 if not self._drawn_item is None:
                     print('ending draw')
                     poly = self._drawn_item.toROI(self._shape()).roi
+                    self.removeItem(self._drawn_item)
                     self._reset_drawing_state()
                     print('propose add 1 poly manually')
                     self.proposeAdd.emit([poly])
@@ -168,21 +166,25 @@ class ROIsCreator(PaneledWidget):
         super().__init__(*args, **kwargs)
 
         # Widgets
-        self._image = ROIsImageWidget(editable=True)
-        self._main_layout.addWidget(self._image)
+        self._widget = ROIsImageWidget(editable=True)
+        self._main_layout.addWidget(self._widget)
         self._bottom_layout.addWidget(QLabel('Mode:'))
+        self._bottom_layout.addSpacing(10)
         self._mode_btns = []
         for i in range(len(self.AVAIL_MODES)):
             self._add_mode(i)
         self._chull_box = QCheckBox('Convex hull')
+        self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(self._chull_box)
         self._rgb_box = QCheckBox('Interpret RGB')
+        self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(self._rgb_box)
         self._rgb_box.hide()
         self._chan_slider = IntegerSlider(mode='scroll')
         self._bottom_layout.addWidget(self._chan_slider)
         self._chan_slider.hide()
         self._count_lbl = QLabel()
+        self._bottom_layout.addStretch()
         self._bottom_layout.addWidget(self._count_lbl)
 
         # State
@@ -199,37 +201,39 @@ class ROIsCreator(PaneledWidget):
         self._rgb_box.stateChanged.connect(lambda _: self._update_settings(redraw=True))
         self._chan_slider.valueChanged.connect(lambda _: self._update_settings(redraw=True))
         # Bubble up other signals
-        self._image.proposeAdd.connect(lambda polys: self.proposeAdd.emit(self._make_rois(polys)))
-        self._image.proposeDelete.connect(self.proposeDelete.emit)
+        self._widget.proposeAdd.connect(lambda polys: self.proposeAdd.emit(self._make_rois(polys)))
+        self._widget.proposeDelete.connect(self.proposeDelete.emit)
 
     ''' API methods '''
 
     def setData(self, img: np.ndarray, rois: List[LabeledROI]):
-        self._image.setData(img, rois)
+        self.setImage(img)
+        self.setROIs(rois)
 
     def setImage(self, img: np.ndarray):
         assert img.ndim in [2, 3], 'Expected XY or XYC image'
+        self._img = img
         if img.ndim == 2 or img.shape[2] == 1:
             self._rgb_box.hide()
             self._chan_slider.hide()
             img = img if img.ndim == 2 else img[:, :, 0]
-            self._image.setImage(img)
+            self._widget.setImage(img)
         else:
             if img.shape[2] == 3:
                 self._rgb_box.show()
                 self._rgb_box.setChecked(self._interpret_rgb)
             if self._interpret_rgb:
                 self._chan_slider.hide()
-                self._image.setImage(img)
+                self._widget.setImage(img)
             else:
                 self._chan_slider.show()
                 cmax = img.shape[2] - 1
                 self._chan = min(self._chan, cmax)
                 self._chan_slider.setData(0, cmax, self._chan)
-                self._image.setImage(img[:, :, self._chan])
+                self._widget.setImage(img[:, :, self._chan])
 
     def setROIs(self, rois: List[LabeledROI]):
-        self._image.setROIs(rois)
+        self._widget.setROIs(rois)
         self._set_count(len(rois))
 
     ''' Private methods '''

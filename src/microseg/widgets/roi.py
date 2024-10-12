@@ -57,17 +57,15 @@ class LabeledROI:
         '''
         Transform appropriately for rendering in pyqtgraph's weird orientation defaults
         '''
-        xlen, ylen = img_shape
-        offset = np.array([0, ylen-xlen])
-        return (self + offset).flipy(ylen)
+        _, ylen = img_shape
+        return self.flipy(ylen)
     
     def fromPyQTOrientation(self, img_shape: Tuple[int, int]) -> 'LabeledROI':
         '''
         Transform appropriately for rendering in pyqtgraph's weird orientation defaults
         '''
-        xlen, ylen = img_shape
-        offset = np.array([0, ylen-xlen])
-        return self.flipy(ylen) - offset
+        _, ylen = img_shape
+        return self.flipy(ylen)
         
 '''
 ROI Items (for adding to Qt widgets)
@@ -114,6 +112,10 @@ class LabeledROIItem:
         '''
         return self._lroi.fromPyQTOrientation(img_shape)
 
+    @property
+    def lbl(self) -> int:
+        return self._lroi.lbl
+
 class LabeledPolygonItem(QGraphicsPolygonItem, LabeledROIItem):
     def __init__(self, lroi: LabeledROI, *args, **kwargs):
         # Both constructors get called automatically, so pass the named one explicitly
@@ -131,7 +133,7 @@ class LabeledEllipseItem(QGraphicsEllipseItem, LabeledROIItem):
         self.setRect(x-hr, y-vr, 2*hr, 2*vr)
         P = P.T
         theta = np.arctan2(P[1,0], P[0,0]) # Angle from orthogonal matrix P.T
-        self.setTransformOriginPoint(QtCore.QPointF(x+hr, y+vr)) # Transform about ellipse center
+        self.setTransformOriginPoint(QtCore.QPointF(x, y)) # Transform about ellipse center
         self.setRotation(theta*180/np.pi) # Rotate onto basis P
 
 class LabeledCircleItem(QGraphicsEllipseItem, LabeledROIItem):

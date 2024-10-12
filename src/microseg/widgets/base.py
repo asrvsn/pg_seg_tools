@@ -139,14 +139,15 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
         # State
         self._undo_stack: List[Any] = []
         self._redo_stack: List[Any] = []
+        self.pushEdit(mark=False) # Push initial state onto undo stack
 
     ''' API methods '''
 
-    def pushEdit(self):
+    def pushEdit(self, mark: bool=True):
         self._undo_stack.append(self.copyFromState())
         self._undo_stack = self._undo_stack[-self.undo_n:]
         self._redo_stack = []
-        self._mark_edited(True)
+        self._mark_edited(mark)
 
     ''' Abstract methods '''
 
@@ -207,15 +208,15 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
         else:
             print('Cannot redo further')
 
-    def closeEvent(self, event):
-        if self._is_edited:
-            reply = QMessageBox.question(self, 'Unsaved changes', 'You have unsaved changes. Do you want to proceed without saving?', QMessageBox.Proceed | QMessageBox.Cancel, QMessageBox.Cancel)
-            if reply == QMessageBox.Proceed:
-                event.accept()
-            else:
-                event.ignore()
-        else:
-            event.accept()
+    # def closeEvent(self, event):
+    #     if self._is_edited:
+    #         reply = QMessageBox.question(self, 'Unsaved changes', 'You have unsaved changes. Do you want to proceed without saving?', QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Cancel)
+    #         if reply == QMessageBox.Ok:
+    #             event.accept()
+    #         else:
+    #             event.ignore()
+    #     else:
+    #         event.accept()
 
 class TreeViewLeafSelectable(QTreeView):
     ''' Version of QTreeView in which only leaf nodes are selectable '''

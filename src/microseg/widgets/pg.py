@@ -66,7 +66,7 @@ class ImagePlotWidget(NoTouchPlotWidget):
     '''
     Plot widget with default image item, zoom limits set to image
     '''
-    def __init__(self, *args, limit_zoom: bool=True, **kwargs):
+    def __init__(self, *args, limit_zoom: bool=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.setAspectLocked(True)
         self.hideAxis('left')
