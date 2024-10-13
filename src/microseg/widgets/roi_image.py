@@ -8,12 +8,13 @@ from qtpy.QtWidgets import QRadioButton, QLabel, QCheckBox, QComboBox
 
 from .pg import *
 from .roi import *
+from .seg.base import *
 
 class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     '''
     Editable widget for displaying and drawing ROIs on an image
     '''
-    proposeAdd = QtCore.Signal(object) # List[PlanarPolygon]
+    proposeAdd = QtCore.Signal(object) # PlanarPolygon
     proposeDelete = QtCore.Signal(object) # Set[int]
 
     def __init__(self, editable: bool=False, **kwargs):
@@ -138,8 +139,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
                     poly = self._drawn_item.toROI(self._shape()).roi
                     self.removeItem(self._drawn_item)
                     self._reset_drawing_state()
-                    print('propose add 1 poly manually')
-                    self.proposeAdd.emit([poly])
+                    self.proposeAdd.emit(poly)
 
 class ROIsCreator(PaneledWidget):
     '''
@@ -151,15 +151,12 @@ class ROIsCreator(PaneledWidget):
     '''
     proposeAdd = QtCore.Signal(object) # List[ROI]
     proposeDelete = QtCore.Signal(object) # Set[int]
-    AVAIL_MODES = [
-        ('Polygon', lambda self, polys: [
-            p.hullify() if self._use_chull else p for p in polys
-        ]),
-        ('Ellipse', lambda self, polys: [
-            Ellipse.from_poly(p) for p in polys
-        ]),
-        ('Circle', lambda self, polys: [
-            Circle.from_poly(p) for p in polys
+    AVAIL_SEGMENTORS: List[SegmentorWidget] = [
+        ('Polygon', lambda self, poly: [poly.hullify() if self._use_chull else poly]),
+        ('Ellipse', lambda self, poly: [Ellipse.from_poly(poly)]),
+        ('Circle', lambda self, poly: [Circle.from_poly(poly)]),
+        ('Cellpose': lambda self, poly: [
+
         ]),
     ]
     def __init__(self, *args, **kwargs):
@@ -171,20 +168,22 @@ class ROIsCreator(PaneledWidget):
         self._bottom_layout.addWidget(QLabel('Mode:'))
         self._bottom_layout.addSpacing(10)
         self._mode_btns = []
-        for i in range(len(self.AVAIL_MODES)):
+        for i in range(len(self.AVAIL_SEGMENTORS)):
             self._add_mode(i)
         self._chull_box = QCheckBox('Convex hull')
         self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(self._chull_box)
+        self._bottom_layout.addStretch()
         self._rgb_box = QCheckBox('Interpret RGB')
-        self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(self._rgb_box)
         self._rgb_box.hide()
+        self._bottom_layout.addSpacing(10)
+        self._bottom_layout.addWidget(QLabel('Chan:'))
         self._chan_slider = IntegerSlider(mode='scroll')
         self._bottom_layout.addWidget(self._chan_slider)
         self._chan_slider.hide()
         self._count_lbl = QLabel()
-        self._bottom_layout.addStretch()
+        self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(self._count_lbl)
 
         # State
@@ -239,7 +238,7 @@ class ROIsCreator(PaneledWidget):
     ''' Private methods '''
 
     def _add_mode(self, i: int):
-        mode, _ = self.AVAIL_MODES[i]
+        mode, _ = self.AVAIL_SEGMENTORS[i]
         btn = QRadioButton(mode)
         self._mode_btns.append(btn)
         self._bottom_layout.addWidget(btn)
@@ -247,7 +246,7 @@ class ROIsCreator(PaneledWidget):
 
     def _set_mode(self, i: int):
         self._mode = i
-        if self.AVAIL_MODES[i][0] == 'Polygon':
+        if self.AVAIL_SEGMENTORS[i][0] == 'Polygon':
             self._chull_box.show()
         else:
             self._chull_box.hide()
@@ -263,4 +262,4 @@ class ROIsCreator(PaneledWidget):
         self._count_lbl.setText(f'Objects: {n}')
         
     def _make_rois(self, polys: List[PlanarPolygon]) -> List[ROI]:
-        return self.AVAIL_MODES[self._mode][1](self, polys)
+        return self.AVAIL_SEGMENTORS[self._mode][1](self, polys)
