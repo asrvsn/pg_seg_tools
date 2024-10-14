@@ -14,8 +14,8 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     '''
     Editable widget for displaying and drawing ROIs on an image
     '''
-    proposeAdd = QtCore.Signal(object) # PlanarPolygon
-    proposeDelete = QtCore.Signal(object) # Set[int]
+    add = QtCore.Signal(object) # PlanarPolygon
+    delete = QtCore.Signal(object) # Set[int]
 
     def __init__(self, editable: bool=False, **kwargs):
         super().__init__(**kwargs)
@@ -89,7 +89,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     def _delete(self):
         if self._editable and len(self._selected) > 0:
             print(f'propose delete {len(self._selected)} things')
-            self.proposeDelete.emit(set(self._items[i].lbl for i in self._selected))
+            self.delete.emit(set(self._items[i].lbl for i in self._selected))
 
     def _edit(self):
         print('edit')
@@ -139,7 +139,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
                     poly = self._drawn_item.toROI(self._shape()).roi
                     self.removeItem(self._drawn_item)
                     self._reset_drawing_state()
-                    self.proposeAdd.emit(poly)
+                    self.add.emit(poly)
 
 class ROIsCreator(PaneledWidget):
     '''
@@ -149,15 +149,11 @@ class ROIsCreator(PaneledWidget):
     - channel selector for image
     Expects image in XYC format
     '''
-    proposeAdd = QtCore.Signal(object) # List[ROI]
-    proposeDelete = QtCore.Signal(object) # Set[int]
-    AVAIL_SEGMENTORS: List[SegmentorWidget] = [
-        ('Polygon', lambda self, poly: [poly.hullify() if self._use_chull else poly]),
-        ('Ellipse', lambda self, poly: [Ellipse.from_poly(poly)]),
-        ('Circle', lambda self, poly: [Circle.from_poly(poly)]),
-        ('Cellpose': lambda self, poly: [
-
-        ]),
+    add = QtCore.Signal(object) # List[ROI]
+    delete = QtCore.Signal(object) # Set[int]
+    AVAIL_MODES: List[SegmentorWidget] = [
+        ManualSegmentorWidget,
+        CellposeSegmentorWidget,
     ]
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -167,41 +163,51 @@ class ROIsCreator(PaneledWidget):
         self._main_layout.addWidget(self._widget)
         self._bottom_layout.addWidget(QLabel('Mode:'))
         self._bottom_layout.addSpacing(10)
+        self._seg_widgets = []
         self._mode_btns = []
-        for i in range(len(self.AVAIL_SEGMENTORS)):
+        for i in range(len(self.AVAIL_MODES)):
             self._add_mode(i)
-        self._chull_box = QCheckBox('Convex hull')
-        self._bottom_layout.addSpacing(10)
-        self._bottom_layout.addWidget(self._chull_box)
         self._bottom_layout.addStretch()
-        self._rgb_box = QCheckBox('Interpret RGB')
-        self._bottom_layout.addWidget(self._rgb_box)
-        self._rgb_box.hide()
-        self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(QLabel('Chan:'))
         self._chan_slider = IntegerSlider(mode='scroll')
         self._bottom_layout.addWidget(self._chan_slider)
         self._chan_slider.hide()
+        self._rgb_box = QCheckBox('Interpret RGB')
+        self._bottom_layout.addSpacing(10)
+        self._bottom_layout.addWidget(self._rgb_box)
+        self._rgb_box.hide()
+        self._options_box = QCheckBox('Show options')
+        self._bottom_layout.addSpacing(10)
+        self._bottom_layout.addWidget(self._options_box)
         self._count_lbl = QLabel()
         self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(self._count_lbl)
+        self._candidates_box = QCheckBox('Candidates only')
+        self._bottom_layout.addSpacing(10)
+        self._bottom_layout.addWidget(self._candidates_box)
+        self._candidates_lbl = QLabel()
+        self._bottom_layout.addSpacing(10)
+        self._bottom_layout.addWidget(self._candidates_lbl)
 
         # State
         self._mode = 0
         self._img = None
+        self._rois = []
+        self._candidate_rois = []
+        self._is_prompting = False
         self._mode_btns[self._mode].setChecked(True)
-        self._chull_box.setChecked(True)
         self._rgb_box.setChecked(True)
+        self._options_box.setChecked(False)
         self._chan_slider.setData(0, 255, 0)
+        self._candidates_box.setChecked(False)
         self._update_settings(redraw=False)
 
         # Listeners
-        self._chull_box.stateChanged.connect(lambda _: self._update_settings(redraw=False))
+        self._options_box.stateChanged.connect(lambda _: self._update_settings(redraw=False))
         self._rgb_box.stateChanged.connect(lambda _: self._update_settings(redraw=True))
         self._chan_slider.valueChanged.connect(lambda _: self._update_settings(redraw=True))
-        # Bubble up other signals
-        self._widget.proposeAdd.connect(lambda polys: self.proposeAdd.emit(self._make_rois(polys)))
-        self._widget.proposeDelete.connect(self.proposeDelete.emit)
+        self._widget.add.connect(self._add_from_child)
+        self._widget.delete.connect(self._delete_from_child)
 
     ''' API methods '''
 
@@ -231,35 +237,86 @@ class ROIsCreator(PaneledWidget):
                 self._chan_slider.setData(0, cmax, self._chan)
                 self._widget.setImage(img[:, :, self._chan])
 
-    def setROIs(self, rois: List[LabeledROI]):
+    def setROIs(self, rois: List[LabeledROI], reset: bool=True):
+        n, m = len(rois), len(self._candidate_rois)
+        self._rois = rois
+        if reset:
+            self._candidate_rois = []
+            self._only_candidates = False
+            self._candidates_box.setChecked(False)
+            self._candidates_box.hide()
+            self._candidates_lbl.hide()
+        elif self._only_candidates:
+            rois = self._candidate_rois
+            self._count_lbl.hide()
+            self._candidates_box.show()
+            self._candidates_lbl.show()
+        else:
+            rois = rois + self._candidate_rois
+            if self._is_prompting:
+                self._candidates_box.show()
+                self._candidates_lbl.show()
+            else:
+                self._candidates_box.hide()
+                self._candidates_lbl.hide()
+            self._count_lbl.show()
+
+        self._count_lbl.setText(f'Current: {n}')
+        self._candidates_lbl.setText(f'Candidates: {m}')
         self._widget.setROIs(rois)
-        self._set_count(len(rois))
 
     ''' Private methods '''
 
     def _add_mode(self, i: int):
-        mode, _ = self.AVAIL_SEGMENTORS[i]
-        btn = QRadioButton(mode)
+        seg = self.AVAIL_MODES[i](self)
+        btn = QRadioButton(seg.name())
         self._mode_btns.append(btn)
         self._bottom_layout.addWidget(btn)
         btn.clicked.connect(lambda: self._set_mode(i))
+        # Listeners
+        seg.propose.connect(self._propose)
+        seg.add.connect(self._add)
+        seg.cancel.connect(self._cancel)
 
     def _set_mode(self, i: int):
         self._mode = i
-        if self.AVAIL_SEGMENTORS[i][0] == 'Polygon':
-            self._chull_box.show()
-        else:
-            self._chull_box.hide()
 
     def _update_settings(self, redraw: bool=True):
-        self._use_chull = self._chull_box.isChecked()
+        self._show_options = self._options_box.isChecked()
         self._interpret_rgb = self._rgb_box.isChecked()
         self._chan = self._chan_slider.value()
+        self._only_candidates = self._candidates_box.isChecked()
         if redraw:
             self.setImage(self._img)
 
-    def _set_count(self, n: int):
-        self._count_lbl.setText(f'Objects: {n}')
-        
-    def _make_rois(self, polys: List[PlanarPolygon]) -> List[ROI]:
-        return self.AVAIL_SEGMENTORS[self._mode][1](self, polys)
+    def _add_from_child(self, poly: PlanarPolygon):
+        '''
+        Process add() signal from child
+        '''
+        assert not self._is_prompting
+        assert len(self._candidate_rois) == 0
+        self._is_prompting = True
+        self.AVAIL_MODES[self._mode].prompt(
+            poly, self._show_options
+        )
+
+    def _delete_from_child(self, lbls: Set[int]):
+        '''
+        Process delete() signal from child
+        '''
+        pass
+
+    def _propose(self, rois: List[ROI]):
+        '''
+        Show candidate ROIs at this level without committing them to the parent yet.
+        '''
+        pass
+
+    def _add(self, rois: List[ROI]):
+        '''
+        add() from segmentor -> add() bubble up. This asynchronously processes the containee's request.
+        '''
+        pass
+
+    def _cancel(self):
+        pass

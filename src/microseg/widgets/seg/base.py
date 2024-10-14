@@ -11,6 +11,10 @@ from microseg.widgets.base import *
 from microseg.widgets.roi import ROI
 
 class SegmentorWidget(QtWidgets.QWidget, metaclass=abc.ABCMeta):
+    propose = QtCore.Signal(object) # List[ROI]
+    add = QtCore.Signal(object) # List[ROI]
+    cancel = QtCore.Signal()
+    
     def __init__(self, *args, **kwargs):
         ''' Create self '''
         super().__init__(*args, **kwargs)
@@ -18,6 +22,7 @@ class SegmentorWidget(QtWidgets.QWidget, metaclass=abc.ABCMeta):
         self.setLayout(self._layout)
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setWindowModality(Qt.NonModal)
+        self.setWindowTitle(self.name())
 
     # Abstract static method: name
     @abc.abstractmethod
@@ -26,7 +31,7 @@ class SegmentorWidget(QtWidgets.QWidget, metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def prompt(self, poly: PlanarPolygon, show: bool=True) -> List[ROI]:
+    def prompt(self, poly: PlanarPolygon, show: bool):
         '''
         From a prompt polygon, produce a list of candidate ROIs
         the "show" parameter determines whether to show the options, and 
