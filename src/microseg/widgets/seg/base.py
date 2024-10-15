@@ -34,7 +34,9 @@ class SegmentorWidget(QtWidgets.QWidget, metaclass=abc.ABCMeta):
     def prompt(self, poly: PlanarPolygon, show: bool):
         '''
         From a prompt polygon, produce a list of candidate ROIs
-        the "show" parameter determines whether to show the options, and 
-        sensible defaults should be taken to produce the candidate set if show is false.
+        the "show" parameter determines whether to show the options, with sensible 
+        defaults taken if it is false. 
+        - show=False: fire propose() any number of times then add() or cancel()
+        - show=True: fire add() immediately
         '''
         pass
