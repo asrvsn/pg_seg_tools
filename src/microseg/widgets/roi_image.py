@@ -8,7 +8,7 @@ from qtpy.QtWidgets import QRadioButton, QLabel, QCheckBox, QComboBox
 
 from .pg import *
 from .roi import *
-from .seg.base import *
+from .seg import *
 
 class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     '''
@@ -153,7 +153,7 @@ class ROIsCreator(PaneledWidget):
     delete = QtCore.Signal(object) # Set[int]
     AVAIL_MODES: List[SegmentorWidget] = [
         ManualSegmentorWidget,
-        CellposeSegmentorWidget,
+        # CellposeSegmentorWidget,
     ]
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -163,9 +163,9 @@ class ROIsCreator(PaneledWidget):
         self._main_layout.addWidget(self._widget)
         self._bottom_layout.addWidget(QLabel('Mode:'))
         self._bottom_layout.addSpacing(10)
-        self._seg_widgets = []
+        self._segmentors = [self._add_mode(c) for c in self.AVAIL_MODES]
         self._mode_drop = QComboBox()
-        self._mode_drop.addItems([self._add_mode(c) for c in self.AVAIL_MODES])
+        self._mode_drop.addItems([s.name() for s in self._segmentors])
         self._bottom_layout.addWidget(self._mode_drop)
         self._bottom_layout.addStretch()
         self._bottom_layout.addWidget(QLabel('Chan:'))
@@ -193,10 +193,10 @@ class ROIsCreator(PaneledWidget):
         self._mode = 0
         self._img = None
         self._rois = []
+        self._set_proposing(False)
         self._proposed_rois = []
-        self._is_proposing = False
         self._rgb_box.setChecked(True)
-        self._options_box.setChecked(False)
+        self._options_box.setChecked(True)
         self._chan_slider.setData(0, 255, 0)
         self._proposals_box.setChecked(False)
         self._update_settings(redraw=False)
@@ -246,12 +246,12 @@ class ROIsCreator(PaneledWidget):
 
     ''' Private methods '''
 
-    def _add_mode(self, Cls: Type[SegmentorWidget]) -> str:
+    def _add_mode(self, Cls: Type[SegmentorWidget]) -> SegmentorWidget:
         seg = Cls(self)
         seg.propose.connect(self._propose)
         seg.add.connect(self._add)
         seg.cancel.connect(self._cancel)
-        return seg.name()
+        return seg
 
     def _set_mode(self, i: int):
         self._mode = i
@@ -276,9 +276,10 @@ class ROIsCreator(PaneledWidget):
         assert not self._is_proposing
         assert len(self._proposed_rois) == 0
         self._is_proposing = True
-        self.AVAIL_MODES[self._mode].prompt(
-            poly, self._show_options
-        )
+        if self._show_options:
+            self._segmentors[self._mode].prompt(poly)
+        else:
+            self._segmentors[self._mode].prompt_immediate(poly)
 
     def _delete_from_child(self, lbls: Set[int]):
         '''
