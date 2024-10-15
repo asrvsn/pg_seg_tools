@@ -32,8 +32,8 @@ class ImageSegmentorApp(SaveableApp):
         self._creator.setImage(self._img[self._z])
 
         # Listeners
-        self._creator.proposeAdd.connect(self._add)
-        self._creator.proposeDelete.connect(self._delete)
+        self._creator.add.connect(self._add)
+        self._creator.delete.connect(self._delete)
         self._z_slider.valueChanged.connect(lambda z: self._set_z(z))
 
         # Run data load and rest of initialization in superclass

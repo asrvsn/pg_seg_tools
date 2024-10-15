@@ -14,11 +14,11 @@ class ManualSegmentorWidget(SegmentorWidget):
         self._poly_btn = QRadioButton('Polygon')
         self._ellipse_btn = QRadioButton('Ellipse')
         self._circle_btn = QRadioButton('Circle')
-        self._main._layout.addWidget(self._poly_btn)
-        self._main._layout.addWidget(self._ellipse_btn)
-        self._main._layout.addWidget(self._circle_btn)
+        self._main.addWidget(self._poly_btn)
+        self._main.addWidget(self._ellipse_btn)
+        self._main.addWidget(self._circle_btn)
         self._chull_box = QCheckBox('Convex hull')
-        self._main._layout.addWidget(self._chull_box)
+        self._main.addWidget(self._chull_box)
 
         # State
         self._poly_btn.setChecked(True)
@@ -26,8 +26,7 @@ class ManualSegmentorWidget(SegmentorWidget):
 
     ''' Overrides '''
 
-    @staticmethod
-    def name() -> str:
+    def name(self) -> str:
         return 'Manual'
 
     def make_proposals(self, poly: PlanarPolygon) -> List[ROI]:

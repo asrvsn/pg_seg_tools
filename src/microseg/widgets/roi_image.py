@@ -292,8 +292,8 @@ class ROIsCreator(PaneledWidget):
 
     def _propose(self, rois: List[ROI]):
         '''
-        Show additional proposed ROIs at this level without committing them to the parent yet.
-        Can be called any number of times.
+        Show additional proposed ROIs at this level without bubbling them to the parent yet.
+        Intended to be called any number of times in sequence.
         '''
         if not self._is_proposing:
             self._set_proposing(True)
@@ -306,7 +306,7 @@ class ROIsCreator(PaneledWidget):
 
     def _add(self):
         '''
-        Process add() signal from segmentor, which asynchronously processed add() signal from child.
+        Process add() signal from segmentor, which asynchronously bubbles add() signal from child.
         '''
         assert self._is_proposing
         self._set_proposing(False)
@@ -321,7 +321,7 @@ class ROIsCreator(PaneledWidget):
         assert self._is_proposing
         self._set_proposing(False)
         self._proposed_rois = []
-        self.setROIs(self._rois)
+        self._widget.setROIs(self._rois)
 
     def _set_proposing(self, bit: bool):
         self._is_proposing = bit

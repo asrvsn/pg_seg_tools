@@ -11,7 +11,7 @@ from matgeo import PlanarPolygon
 from microseg.widgets.base import *
 from microseg.widgets.roi import ROI
 
-class SegmentorWidget(QtWidgets.QWidget, metaclass=abc.ABCMeta):
+class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
     propose = QtCore.Signal(object) # List[ROI]
     add = QtCore.Signal(object) # List[ROI]
     cancel = QtCore.Signal()
@@ -19,10 +19,8 @@ class SegmentorWidget(QtWidgets.QWidget, metaclass=abc.ABCMeta):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Widgets
-        self._layout = VLayout()
-        self.setLayout(self._layout)
         self._main = VLayoutWidget()
-        self._layout.addWidget(self._main)
+        self.addWidget(self._main)
         self._bottom = HLayoutWidget()
         self._propose_btn = QPushButton('Propose')
         self._bottom.addWidget(self._propose_btn)
@@ -30,7 +28,7 @@ class SegmentorWidget(QtWidgets.QWidget, metaclass=abc.ABCMeta):
         self._bottom.addWidget(self._ok_btn)
         self._cancel_btn = QPushButton('Cancel')
         self._bottom.addWidget(self._cancel_btn)
-        self._layout.addWidget(self._bottom)
+        self.addWidget(self._bottom)
 
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setWindowModality(Qt.NonModal)
@@ -47,8 +45,7 @@ class SegmentorWidget(QtWidgets.QWidget, metaclass=abc.ABCMeta):
     ''' Overrides '''
 
     @abc.abstractmethod
-    @staticmethod
-    def name() -> str:
+    def name(self) -> str:
         pass
 
     @abc.abstractmethod
