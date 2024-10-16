@@ -1,7 +1,7 @@
 '''
 Manual segmentor dialog
 '''
-from qtpy.QtWidgets import QRadioButton, QCheckBox
+from qtpy.QtWidgets import QRadioButton, QCheckBox, QButtonGroup
 
 from matgeo import PlanarPolygon, Circle, Ellipse
 from .base import *
@@ -21,6 +21,9 @@ class ManualSegmentorWidget(SegmentorWidget):
         self._main.addWidget(self._ellipse_btn)
         self._circle_btn = QRadioButton('Circle')
         self._main.addWidget(self._circle_btn)
+        self._roi_grp = QButtonGroup(self._main)
+        for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn]:
+            self._roi_grp.addButton(btn)
 
         # State
         self._poly_btn.setChecked(True)

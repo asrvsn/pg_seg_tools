@@ -2,7 +2,7 @@
 Cellpose3-based segmentor
 '''
 import numpy as np
-from qtpy.QtWidgets import QCheckBox, QComboBox, QLabel, QPushButton, QRadioButton
+from qtpy.QtWidgets import QCheckBox, QComboBox, QLabel, QPushButton, QRadioButton, QButtonGroup
 import cellpose
 import cellpose.models
 import upolygon
@@ -11,7 +11,7 @@ from matgeo import PlanarPolygon, Circle, Ellipse
 from .base import *
 
 class CellposeSegmentorWidget(SegmentorWidget):
-    USE_GPU: bool=True
+    USE_GPU: bool=False
     MODELS: List[str] = [
         'cyto3',
         'nuclei',
@@ -29,10 +29,12 @@ class CellposeSegmentorWidget(SegmentorWidget):
         self._cp_mod_drop = QComboBox()
         self._cp_mod_drop.addItems(self.MODELS)
         mod_wdg.addWidget(self._cp_mod_drop)
+        self._cp_wdg.addWidget(mod_wdg)
         cellprob_wdg = HLayoutWidget()
         cellprob_wdg.addWidget(QLabel('Cellprob:'))
         self._cp_cellprob_sld = FloatSlider(step=0.1)
-        self._cp_wdg.addWidget(mod_wdg)
+        cellprob_wdg.addWidget(self._cp_cellprob_sld)
+        self._cp_wdg.addWidget(cellprob_wdg)
         self._cp_btn = QPushButton('Recompute')
         self._cp_wdg.addWidget(self._cp_btn)
 
@@ -49,11 +51,15 @@ class CellposeSegmentorWidget(SegmentorWidget):
         self._roi_wdg.addWidget(self._ellipse_btn)
         self._circle_btn = QRadioButton('Make circles')
         self._roi_wdg.addWidget(self._circle_btn)
+        self._roi_grp = QButtonGroup(self._roi_wdg)
+        for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn]:
+            self._roi_grp.addButton(btn)
 
         # State
         self._set_cp_model(0)
         self._cp_cellprob_sld.setData(-3, 4, 0.)
         self._chull_box.setChecked(False)
+        self._poly_btn.setChecked(True)
 
         # Listeners
         for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn, self._chull_box]:
@@ -109,10 +115,10 @@ class CellposeSegmentorWidget(SegmentorWidget):
         Post-processes cellpose mask into ROIs
         '''
         rois = []
-        do_poly = self._poly_btn.isChecked()
+        mk_poly = self._poly_btn.isChecked()
         use_chull = self._chull_box.isChecked()
-        do_ell = self._ellipse_btn.isChecked()
-        do_circ = self._circle_btn.isChecked()
+        mk_ell = self._ellipse_btn.isChecked()
+        mk_circ = self._circle_btn.isChecked()
         labels = np.unique(cp_mask)
         for l in labels:
             if l == 0:
@@ -122,15 +128,17 @@ class CellposeSegmentorWidget(SegmentorWidget):
             contours = [np.array(c).reshape(-1, 2) for c in contours] # Convert X, Y, X, Y,... to X, Y
             contour = max(contours, key=lambda c: c.shape[0]) # Find longest contour
             poly = PlanarPolygon(contour)
-            if do_poly:
+            if mk_poly:
                 if use_chull: 
                     roi = poly.hullify()
                 else:
                     roi = poly
-            elif do_ell:
+            elif mk_ell:
                 roi = Ellipse.from_poly(poly)
-            elif do_circ:
+            elif mk_circ:
                 roi = Circle.from_poly(poly)
+            else:
+                raise Exception('Invalid ROI type')
             rois.append(roi)
         return rois
 

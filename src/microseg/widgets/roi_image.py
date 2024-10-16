@@ -144,8 +144,8 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
 class ROIsCreator(PaneledWidget):
     '''
     Thin wrapper around ROIsImageWidget for creating ROIs with several options
-    - convert drawn poly to ellipse or circle
-    - take convex hull of drawn poly
+    - mode selector
+    - show options 
     - channel selector for image
     Expects image in XYC format
     '''
@@ -153,7 +153,7 @@ class ROIsCreator(PaneledWidget):
     delete = QtCore.Signal(object) # Set[int], labels of deleted ROIs
     AVAIL_MODES: List[SegmentorWidget] = [
         ManualSegmentorWidget,
-        # CellposeSegmentorWidget,
+        CellposeSegmentorWidget,
     ]
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -171,6 +171,14 @@ class ROIsCreator(PaneledWidget):
         self._bottom_layout.addSpacing(10)
         self._options_box = QCheckBox('Show options')
         self._bottom_layout.addWidget(self._options_box)
+        self._bottom_layout.addSpacing(10)
+        self._proposals_wdg = HLayoutWidget()
+        self._proposals_lbl = QLabel()
+        self._proposals_wdg.addWidget(self._proposals_lbl)
+        self._proposals_wdg.addSpacing(10)
+        self._proposals_box = QCheckBox('Proposals only')
+        self._proposals_wdg.addWidget(self._proposals_box)
+        self._bottom_layout.addWidget(self._proposals_wdg)
         self._bottom_layout.addStretch()
         self._bottom_layout.addWidget(QLabel('Chan:'))
         self._chan_slider = IntegerSlider(mode='scroll')
@@ -183,12 +191,7 @@ class ROIsCreator(PaneledWidget):
         self._count_lbl = QLabel()
         self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(self._count_lbl)
-        self._proposals_box = QCheckBox('Proposals only')
         self._bottom_layout.addSpacing(10)
-        self._bottom_layout.addWidget(self._proposals_box)
-        self._proposals_lbl = QLabel()
-        self._bottom_layout.addSpacing(10)
-        self._bottom_layout.addWidget(self._proposals_lbl)
 
         # State
         self._mode = 0
@@ -273,7 +276,7 @@ class ROIsCreator(PaneledWidget):
         ''' Get displayed image using current settings '''
         if self._img.ndim == 2:
             return self._img
-        elif self._img.shpae[2] == 1:
+        elif self._img.shape[2] == 1:
             return self._img[:, :, 0]
         elif self._interpret_rgb:
             return self._img
@@ -286,7 +289,6 @@ class ROIsCreator(PaneledWidget):
         '''
         assert not self._is_proposing
         assert len(self._proposed_rois) == 0
-        self._is_proposing = True
         img = self._get_img()
         if self._show_options:
             self._segmentors[self._mode].prompt(img, poly)
@@ -320,6 +322,7 @@ class ROIsCreator(PaneledWidget):
             self._widget.setROIs(proposed_labeled) 
         else:
             self._widget.setROIs(self._rois + proposed_labeled)
+        self._proposals_lbl.setText(f'Proposals: {len(self._proposed_rois)}')
 
     def _add(self):
         '''
@@ -343,10 +346,8 @@ class ROIsCreator(PaneledWidget):
     def _set_proposing(self, bit: bool):
         self._is_proposing = bit
         if bit:
-            self._proposals_box.show()
-            self._proposals_lbl.show()
+            self._proposals_wdg.show()
             self._mode_drop.setEnabled(False)
         else:
-            self._proposals_box.hide()
-            self._proposals_lbl.hide()
+            self._proposals_wdg.hide()
             self._mode_drop.setEnabled(True)
