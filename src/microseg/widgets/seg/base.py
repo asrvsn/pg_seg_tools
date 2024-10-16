@@ -47,9 +47,10 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         pass
 
     @abc.abstractmethod
-    def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[ROI]:
+    def make_proposals(self, img: np.ndarray, poly: PlanarPolygon):
         '''
         From a prompt image and polygon, produce a list of candidate ROIs, given the current settings.
+        Should fire the propose() signal at least one synchronously using these ROIs.
         '''
         pass
 
@@ -69,21 +70,17 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         self._img = img
         self._poly = poly
         self.show()
-        self.propose.emit(self.make_proposals(self._img, self._poly))
+        self.make_proposals(self._img, self._poly)
 
     def prompt_immediate(self, img: np.ndarray, poly: PlanarPolygon):
         '''
         Fires the add() signal immediately.
         '''
-        self.propose.emit(self.make_proposals(img, poly))
+        self.make_proposals(img, poly)
         self.add.emit()
         self.reset_state()
 
     ''' Private methods '''
-
-    def _propose(self):
-        assert not self._poly is None and not self._img is None
-        self.propose.emit(self.make_proposals(self._img, self._poly))
 
     def _ok(self):
         assert not self._poly is None

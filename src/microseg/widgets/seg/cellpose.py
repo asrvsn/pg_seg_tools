@@ -9,6 +9,7 @@ import upolygon
 
 from matgeo import PlanarPolygon, Circle, Ellipse
 from .base import *
+from .manual import ROICreatorWidget
 
 class CellposeSegmentorWidget(SegmentorWidget):
     USE_GPU: bool=False
@@ -41,49 +42,35 @@ class CellposeSegmentorWidget(SegmentorWidget):
         ## For mask -> ROI postprocessing
         self._roi_wdg = VGroupBox('ROI settings')
         self._main.addWidget(self._roi_wdg)
-        self._poly_wdg = HLayoutWidget()
-        self._poly_btn = QRadioButton('Make polygons')
-        self._poly_wdg.addWidget(self._poly_btn)
-        self._chull_box = QCheckBox('Convex hull')
-        self._poly_wdg.addWidget(self._chull_box)
-        self._roi_wdg.addWidget(self._poly_wdg)
-        self._ellipse_btn = QRadioButton('Make ellipses')
-        self._roi_wdg.addWidget(self._ellipse_btn)
-        self._circle_btn = QRadioButton('Make circles')
-        self._roi_wdg.addWidget(self._circle_btn)
-        self._roi_grp = QButtonGroup(self._roi_wdg)
-        for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn]:
-            self._roi_grp.addButton(btn)
+        self._roi_creator = ROICreatorWidget()
+        self._roi_wdg.addWidget(self._roi_creator)
 
         # State
         self._set_cp_model(0)
         self._cp_cellprob_sld.setData(-3, 4, 0.)
-        self._chull_box.setChecked(False)
-        self._poly_btn.setChecked(True)
 
         # Listeners
-        for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn, self._chull_box]:
-            btn.toggled.connect(self._roi_settings_update)
         self._cp_mod_drop.currentIndexChanged.connect(self._set_cp_model)
         self._cp_btn.clicked.connect(self._recompute)
+        self._roi_creator.edited.connect(self.propose.emit) # Bubble from the editor
 
     ''' Overrides '''
 
     def name(self) -> str:
-        return 'Cellpose3'
+        return 'Cellpose'
 
     def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[ROI]:
         ''' 
         Recomputes only the mask/poly post-processing step if no existing cellpose mask exists.
         Cellpose mask is re-computed only on explicit user request.
         '''
-        if self._cp_mask is None:
-            self._update_cp_mask(img, poly)
-        return self._postprocess(self._cp_mask)
+        if self._cp_polys is None:
+            self._update_cp_polys(img, poly)
+        self._roi_creator.setData(self._cp_polys)
 
     def reset_state(self):
         super().reset_state()
-        self._cp_mask = None
+        self._cp_polys = None
 
     ''' Private methods '''
 
@@ -96,7 +83,7 @@ class CellposeSegmentorWidget(SegmentorWidget):
             gpu=self.USE_GPU
         )
 
-    def _update_cp_mask(self, img: np.ndarray, poly: PlanarPolygon):
+    def _update_cp_polys(self, img: np.ndarray, poly: PlanarPolygon):
         '''
         Computes & sets cellpose mask
         '''
@@ -108,51 +95,22 @@ class CellposeSegmentorWidget(SegmentorWidget):
             cellprob_threshold=cellprob,
         )[0]
         assert mask.shape == img.shape[:2]
-        self._cp_mask = mask
-    
-    def _postprocess(self, cp_mask: np.ndarray) -> List[ROI]:
-        '''
-        Post-processes cellpose mask into ROIs
-        '''
-        rois = []
-        mk_poly = self._poly_btn.isChecked()
-        use_chull = self._chull_box.isChecked()
-        mk_ell = self._ellipse_btn.isChecked()
-        mk_circ = self._circle_btn.isChecked()
-        labels = np.unique(cp_mask)
+        self._cp_polys = []
+        labels = np.unique(mask)
         for l in labels:
             if l == 0:
                 continue
-            l_mask = cp_mask == l
+            l_mask = mask == l
             _, contours, __ = upolygon.find_contours(l_mask.astype(np.uint8))
             contours = [np.array(c).reshape(-1, 2) for c in contours] # Convert X, Y, X, Y,... to X, Y
             contour = max(contours, key=lambda c: c.shape[0]) # Find longest contour
             poly = PlanarPolygon(contour)
-            if mk_poly:
-                if use_chull: 
-                    roi = poly.hullify()
-                else:
-                    roi = poly
-            elif mk_ell:
-                roi = Ellipse.from_poly(poly)
-            elif mk_circ:
-                roi = Circle.from_poly(poly)
-            else:
-                raise Exception('Invalid ROI type')
-            rois.append(roi)
-        return rois
-
+            self._cp_polys.append(poly)
+    
     def _recompute(self):
         '''
         Recomputes entire thing
         '''
         assert not self._poly is None and not self._img is None
-        self._update_cp_mask(self._img, self._poly)
-        self._propose()
-
-    def _roi_settings_update(self):
-        if self._poly_btn.isChecked():
-            self._chull_box.setEnabled(True)
-        else:
-            self._chull_box.setEnabled(False)
+        self._update_cp_polys(self._img, self._poly)
         self._propose()
