@@ -15,7 +15,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     Editable widget for displaying and drawing ROIs on an image
     '''
     add = QtCore.Signal(object) # PlanarPolygon
-    delete = QtCore.Signal(object) # Set[int]
+    delete = QtCore.Signal(object) # Set[int], indices into ROIs
 
     def __init__(self, editable: bool=False, **kwargs):
         super().__init__(**kwargs)
@@ -89,7 +89,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     def _delete(self):
         if self._editable and len(self._selected) > 0:
             print(f'propose delete {len(self._selected)} things')
-            self.delete.emit(set(self._items[i].lbl for i in self._selected))
+            self.delete.emit(set(self._selected))
 
     def _edit(self):
         print('edit')
@@ -150,7 +150,7 @@ class ROIsCreator(PaneledWidget):
     Expects image in XYC format
     '''
     add = QtCore.Signal(object) # List[ROI]
-    delete = QtCore.Signal(object) # Set[int]
+    delete = QtCore.Signal(object) # Set[int], labels of deleted ROIs
     AVAIL_MODES: List[SegmentorWidget] = [
         ManualSegmentorWidget,
         # CellposeSegmentorWidget,
@@ -161,12 +161,16 @@ class ROIsCreator(PaneledWidget):
         # Widgets
         self._widget = ROIsImageWidget(editable=True)
         self._main_layout.addWidget(self._widget)
+        self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(QLabel('Mode:'))
         self._bottom_layout.addSpacing(10)
         self._segmentors = [self._add_mode(c) for c in self.AVAIL_MODES]
         self._mode_drop = QComboBox()
         self._mode_drop.addItems([s.name() for s in self._segmentors])
         self._bottom_layout.addWidget(self._mode_drop)
+        self._bottom_layout.addSpacing(10)
+        self._options_box = QCheckBox('Show options')
+        self._bottom_layout.addWidget(self._options_box)
         self._bottom_layout.addStretch()
         self._bottom_layout.addWidget(QLabel('Chan:'))
         self._chan_slider = IntegerSlider(mode='scroll')
@@ -176,9 +180,6 @@ class ROIsCreator(PaneledWidget):
         self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(self._rgb_box)
         self._rgb_box.hide()
-        self._options_box = QCheckBox('Show options')
-        self._bottom_layout.addSpacing(10)
-        self._bottom_layout.addWidget(self._options_box)
         self._count_lbl = QLabel()
         self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(self._count_lbl)
@@ -209,6 +210,8 @@ class ROIsCreator(PaneledWidget):
         self._proposals_box.stateChanged.connect(lambda _: self._set_only_proposals())
         self._widget.add.connect(self._add_from_child)
         self._widget.delete.connect(self._delete_from_child)
+        options_sc = QShortcut(QKeySequence('O'), self)
+        options_sc.activated.connect(lambda: self._options_box.setChecked(not self._options_box.isChecked()))
 
     ''' API methods '''
 
@@ -281,13 +284,18 @@ class ROIsCreator(PaneledWidget):
         else:
             self._segmentors[self._mode].prompt_immediate(poly)
 
-    def _delete_from_child(self, lbls: Set[int]):
+    def _delete_from_child(self, indices: Set[int]):
         '''
         Process delete() signal from child. 
         '''
-        if self._is_proposing: # Delete labels from proposed ROIs
-            self._propose([r for r in self._proposed_rois if not r.lbl in lbls])
-        else: # Bubble to parent
+        if self._is_proposing: 
+            # Allow deletions from proposals only, shift index accordingly
+            n = len(self._rois)
+            proposals = [r for i, r in enumerate(self._proposed_rois) if not (i + n in indices)]
+            self._propose(proposals)
+        else: 
+            # Convert indices to labels and bubble to parent
+            lbls = {self._rois[i].lbl for i in indices}
             self.delete.emit(lbls) 
 
     def _propose(self, rois: List[ROI]):
@@ -297,12 +305,12 @@ class ROIsCreator(PaneledWidget):
         '''
         if not self._is_proposing:
             self._set_proposing(True)
-        self._proposed_rois = rois
-        # TODO: color proposed labels differently
+        self._proposed_rois = rois 
+        proposed_labeled = [LabeledROI(65, r) for r in rois] # All with that color
         if self._only_proposals:
-            self._widget.setROIs(self._proposed_rois) 
+            self._widget.setROIs(proposed_labeled) 
         else:
-            self._widget.setROIs(self._rois + self._proposed_rois)
+            self._widget.setROIs(self._rois + proposed_labeled)
 
     def _add(self):
         '''

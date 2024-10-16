@@ -13,7 +13,7 @@ from microseg.widgets.roi import ROI
 
 class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
     propose = QtCore.Signal(object) # List[ROI]
-    add = QtCore.Signal(object) # List[ROI]
+    add = QtCore.Signal() 
     cancel = QtCore.Signal()
     
     def __init__(self, *args, **kwargs):
@@ -63,12 +63,14 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         '''
         self._poly = poly
         self.show()
+        self.propose.emit(self.make_proposals(self._poly))
 
     def prompt_immediate(self, poly: PlanarPolygon):
         '''
         Fires the add() signal immediately.
         '''
-        self.add.emit(self.make_proposals(poly))
+        self.propose.emit(self.make_proposals(poly))
+        self.add.emit()
 
     ''' Private methods '''
 
@@ -79,7 +81,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
     def _ok(self):
         assert not self._poly is None
         self.hide()
-        self.add.emit(self.make_proposals(self._poly))
+        self.add.emit()
         self._poly = None
 
     def _cancel(self):
