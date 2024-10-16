@@ -22,8 +22,6 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         self._main = VLayoutWidget()
         self.addWidget(self._main)
         self._bottom = HLayoutWidget()
-        self._propose_btn = QPushButton('Propose')
-        self._bottom.addWidget(self._propose_btn)
         self._ok_btn = QPushButton('OK')
         self._bottom.addWidget(self._ok_btn)
         self._cancel_btn = QPushButton('Cancel')
@@ -38,7 +36,6 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         self._poly = None
 
         # Listeners
-        self._propose_btn.clicked.connect(self._propose)
         self._ok_btn.clicked.connect(self._ok)
         self._cancel_btn.clicked.connect(self._cancel)
         
@@ -54,6 +51,12 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         From a prompt polygon, produce a list of candidate ROIs, given the current settings.
         '''
         pass
+
+    def reset_state(self):
+        '''
+        Do any state resets in here before the next call.
+        '''
+        self._poly = None
 
     ''' API '''
 
@@ -71,6 +74,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         '''
         self.propose.emit(self.make_proposals(poly))
         self.add.emit()
+        self.reset_state()
 
     ''' Private methods '''
 
@@ -82,9 +86,9 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         assert not self._poly is None
         self.hide()
         self.add.emit()
-        self._poly = None
+        self.reset_state()
 
     def _cancel(self):
         self.hide()
         self.cancel.emit()
-        self._poly = None
+        self.reset_state()

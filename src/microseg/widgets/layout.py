@@ -60,3 +60,12 @@ class VLayoutWidget(StyledWidget):
 
 	def addWidget(self, w: QtWidgets.QWidget):
 		self._layout.addWidget(w)
+
+class VGroupBox(QtWidgets.QGroupBox):
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self._layout = VLayout()
+		self.setLayout(self._layout)
+
+	def addWidget(self, w: QtWidgets.QWidget):
+		self._layout.addWidget(w)
