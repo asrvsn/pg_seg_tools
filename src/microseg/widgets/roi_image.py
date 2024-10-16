@@ -225,21 +225,18 @@ class ROIsCreator(PaneledWidget):
         if img.ndim == 2 or img.shape[2] == 1:
             self._rgb_box.hide()
             self._chan_slider.hide()
-            img = img if img.ndim == 2 else img[:, :, 0]
-            self._widget.setImage(img)
         else:
             if img.shape[2] == 3:
                 self._rgb_box.show()
                 self._rgb_box.setChecked(self._interpret_rgb)
             if self._interpret_rgb:
                 self._chan_slider.hide()
-                self._widget.setImage(img)
             else:
                 self._chan_slider.show()
                 cmax = img.shape[2] - 1
                 self._chan = min(self._chan, cmax)
                 self._chan_slider.setData(0, cmax, self._chan)
-                self._widget.setImage(img[:, :, self._chan])
+        self._widget.setImage(self._get_img())
 
     def setROIs(self, rois: List[LabeledROI]):
         assert not self._is_proposing
@@ -272,6 +269,17 @@ class ROIsCreator(PaneledWidget):
         self._update_settings(redraw=False)
         self._propose(self._proposed_rois)
 
+    def _get_img(self) -> np.ndarray:
+        ''' Get displayed image using current settings '''
+        if self._img.ndim == 2:
+            return self._img
+        elif self._img.shpae[2] == 1:
+            return self._img[:, :, 0]
+        elif self._interpret_rgb:
+            return self._img
+        else:
+            return self._img[:, :, self._chan]
+
     def _add_from_child(self, poly: PlanarPolygon):
         '''
         Process add() signal from child
@@ -279,10 +287,11 @@ class ROIsCreator(PaneledWidget):
         assert not self._is_proposing
         assert len(self._proposed_rois) == 0
         self._is_proposing = True
+        img = self._get_img()
         if self._show_options:
-            self._segmentors[self._mode].prompt(poly)
+            self._segmentors[self._mode].prompt(img, poly)
         else:
-            self._segmentors[self._mode].prompt_immediate(poly)
+            self._segmentors[self._mode].prompt_immediate(img, poly)
 
     def _delete_from_child(self, indices: Set[int]):
         '''

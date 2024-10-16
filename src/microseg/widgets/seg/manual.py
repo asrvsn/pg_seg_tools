@@ -35,7 +35,7 @@ class ManualSegmentorWidget(SegmentorWidget):
     def name(self) -> str:
         return 'Manual'
 
-    def make_proposals(self, poly: PlanarPolygon) -> List[ROI]:
+    def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[ROI]:
         if self._poly_btn.isChecked():
             if self._chull_box.isChecked():
                 poly = poly.hullify()

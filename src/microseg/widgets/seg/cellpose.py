@@ -54,13 +54,13 @@ class CellposeSegmentorWidget(SegmentorWidget):
     def name(self) -> str:
         return 'Cellpose3'
 
-    def make_proposals(self, poly: PlanarPolygon) -> List[ROI]:
+    def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[ROI]:
         ''' 
         Recomputes only the mask/poly post-processing step if no existing cellpose mask exists.
         Cellpose mask is re-computed only on explicit user request.
         '''
         if self._cp_mask is None:
-            self._cp_mask = self._compute_cp_mask(poly)
+            self._cp_mask = self._compute_cp_mask(img, poly)
         return self._postprocess(self._cp_mask)
 
     def reset_state(self):
@@ -78,7 +78,7 @@ class CellposeSegmentorWidget(SegmentorWidget):
             gpu=self.USE_GPU
         )
 
-    def _compute_cp_mask(self, poly: PlanarPolygon) -> np.ndarray:
+    def _compute_cp_mask(self, img: np.ndarray, poly: PlanarPolygon) -> np.ndarray:
         '''
         Computes cellpose mask
         '''
@@ -94,6 +94,6 @@ class CellposeSegmentorWidget(SegmentorWidget):
         '''
         Recomputes entire thing
         '''
-        assert not self._poly is None
-        self._cp_mask = self._compute_cp_mask(self._poly)
+        assert not self._poly is None and not self._img is None
+        self._cp_mask = self._compute_cp_mask(self._img, self._poly)
         self._propose()

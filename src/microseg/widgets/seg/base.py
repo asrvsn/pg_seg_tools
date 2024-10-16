@@ -3,6 +3,7 @@ Base classes for turning prompt user polygons into segmentations
 Segmentor widgets are basically floating menus
 '''
 import abc
+import numpy as np
 from qtpy import QtWidgets
 from qtpy.QtWidgets import QPushButton
 from qtpy.QtCore import Qt
@@ -33,7 +34,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         self.setWindowTitle(self.name())
 
         # State
-        self._poly = None
+        self.reset_state()
 
         # Listeners
         self._ok_btn.clicked.connect(self._ok)
@@ -46,9 +47,9 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         pass
 
     @abc.abstractmethod
-    def make_proposals(self, poly: PlanarPolygon) -> List[ROI]:
+    def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[ROI]:
         '''
-        From a prompt polygon, produce a list of candidate ROIs, given the current settings.
+        From a prompt image and polygon, produce a list of candidate ROIs, given the current settings.
         '''
         pass
 
@@ -56,31 +57,33 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         '''
         Do any state resets in here before the next call.
         '''
+        self._img = None
         self._poly = None
 
     ''' API '''
 
-    def prompt(self, poly: PlanarPolygon):
+    def prompt(self, img: np.ndarray, poly: PlanarPolygon):
         '''
         Lets the user to fire propose() or cancel() using buttons.
         '''
+        self._img = img
         self._poly = poly
         self.show()
-        self.propose.emit(self.make_proposals(self._poly))
+        self.propose.emit(self.make_proposals(self._img, self._poly))
 
-    def prompt_immediate(self, poly: PlanarPolygon):
+    def prompt_immediate(self, img: np.ndarray, poly: PlanarPolygon):
         '''
         Fires the add() signal immediately.
         '''
-        self.propose.emit(self.make_proposals(poly))
+        self.propose.emit(self.make_proposals(img, poly))
         self.add.emit()
         self.reset_state()
 
     ''' Private methods '''
 
     def _propose(self):
-        assert not self._poly is None
-        self.propose.emit(self.make_proposals(self._poly))
+        assert not self._poly is None and not self._img is None
+        self.propose.emit(self.make_proposals(self._img, self._poly))
 
     def _ok(self):
         assert not self._poly is None
