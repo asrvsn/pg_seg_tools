@@ -153,7 +153,8 @@ class ROIsCreator(PaneledWidget):
     delete = QtCore.Signal(object) # Set[int], labels of deleted ROIs
     AVAIL_MODES: List[SegmentorWidget] = [
         ManualSegmentorWidget,
-        CellposeSegmentorWidget,
+        CellposeMultiSegmentorWidget,
+        CellposeSingleSegmentorWidget,
     ]
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -215,6 +216,8 @@ class ROIsCreator(PaneledWidget):
         self._widget.delete.connect(self._delete_from_child)
         options_sc = QShortcut(QKeySequence('O'), self)
         options_sc.activated.connect(lambda: self._options_box.setChecked(not self._options_box.isChecked()))
+        mode_sc = QShortcut(QKeySequence('M'), self)
+        mode_sc.activated.connect(lambda: self._mode_drop.setCurrentIndex((self._mode_drop.currentIndex() + 1) % len(self._segmentors)))
 
     ''' API methods '''
 

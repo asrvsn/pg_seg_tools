@@ -11,7 +11,7 @@ from matgeo import PlanarPolygon, Circle, Ellipse
 from .base import *
 from .manual import ROICreatorWidget
 
-class CellposeSegmentorWidget(SegmentorWidget):
+class CellposeMultiSegmentorWidget(SegmentorWidget):
     USE_GPU: bool=False
     MODELS: List[str] = [
         'cyto3',
@@ -38,6 +38,7 @@ class CellposeSegmentorWidget(SegmentorWidget):
         self._cp_wdg.addWidget(cellprob_wdg)
         self._cp_btn = QPushButton('Recompute')
         self._cp_wdg.addWidget(self._cp_btn)
+        self._main.addSpacing(10)
 
         ## For mask -> ROI postprocessing
         self._roi_wdg = VGroupBox('ROI settings')
@@ -57,7 +58,7 @@ class CellposeSegmentorWidget(SegmentorWidget):
     ''' Overrides '''
 
     def name(self) -> str:
-        return 'Cellpose'
+        return 'Cellpose (multi)'
 
     def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[ROI]:
         ''' 
@@ -83,10 +84,7 @@ class CellposeSegmentorWidget(SegmentorWidget):
             gpu=self.USE_GPU
         )
 
-    def _update_cp_polys(self, img: np.ndarray, poly: PlanarPolygon):
-        '''
-        Computes & sets cellpose mask
-        '''
+    def _compute_cp_polys(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
         diam = poly.circular_radius() * 2
         cellprob = self._cp_cellprob_sld.value()
         mask = self._cp_model.eval(
@@ -95,7 +93,7 @@ class CellposeSegmentorWidget(SegmentorWidget):
             cellprob_threshold=cellprob,
         )[0]
         assert mask.shape == img.shape[:2]
-        self._cp_polys = []
+        cp_polys = []
         labels = np.unique(mask)
         for l in labels:
             if l == 0:
@@ -105,7 +103,14 @@ class CellposeSegmentorWidget(SegmentorWidget):
             contours = [np.array(c).reshape(-1, 2) for c in contours] # Convert X, Y, X, Y,... to X, Y
             contour = max(contours, key=lambda c: c.shape[0]) # Find longest contour
             poly = PlanarPolygon(contour)
-            self._cp_polys.append(poly)
+            cp_polys.append(poly)
+        return cp_polys
+
+    def _update_cp_polys(self, img: np.ndarray, poly: PlanarPolygon):
+        '''
+        Computes & sets cellpose mask
+        '''
+        self._cp_polys = self._compute_cp_polys(img, poly)
     
     def _recompute(self):
         '''
@@ -114,3 +119,31 @@ class CellposeSegmentorWidget(SegmentorWidget):
         assert not self._poly is None and not self._img is None
         self._update_cp_polys(self._img, self._poly)
         self._propose()
+
+
+class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
+    '''
+    Segment a single object by zooming in 
+    '''
+    WIN_MULT: float=1.5
+
+    def name(self) -> str:
+        return 'Cellpose (single)'
+    
+    def _compute_cp_polys(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
+        center = poly.centroid()
+        radius = np.linalg.norm(poly.vertices - center, axis=1).max() * self.WIN_MULT
+        # Select image by center +- radius 
+        xmin = max(0, math.floor(center[0] - radius))
+        xmax = min(img.shape[1], math.ceil(center[0] + radius))
+        ymin = max(0, math.floor(center[1] - radius))
+        ymax = min(img.shape[0], math.ceil(center[1] + radius))
+        img = img[ymin:ymax, xmin:xmax]
+        offset = np.array([xmin, ymin])
+        # Compute cellpose on sub-img & translate back
+        polys = super()._compute_cp_polys(img, poly - offset)
+        if len(polys) > 0:
+            poly = min(polys, key=lambda p: np.linalg.norm(p.centroid() + offset - center))
+            return [poly + offset]
+        else:
+            return []

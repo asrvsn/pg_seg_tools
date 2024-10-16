@@ -6,11 +6,38 @@ from qtpy.QtWidgets import QRadioButton, QCheckBox, QButtonGroup
 from matgeo import PlanarPolygon, Circle, Ellipse
 from .base import *
 
+class TouchpadWidget(QWidget):
+    moved = QtCore.Signal(object) # np.array (x, y) offset
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setMouseTracking(True)
+        self._mousedown_pos = None
+
+    def mousePressEvent(self, evt):
+        if evt.button() == Qt.LeftButton:
+            self._mousedown_pos = evt.pos()
+
+    def mouseMoveEvent(self, evt):
+        if not self._mousedown_pos is None:
+            offset = np.array([
+                evt.pos().x() - self._mousedown_pos.x(),
+                evt.pos().y() - self._mousedown_pos.y()
+            ])
+            self.moved.emit(offset)
+            self._mousedown_pos = evt.pos()
+
+    def mouseReleaseEvent(self, evt):
+        if evt.button() == Qt.LeftButton:
+            self._mousedown_pos = None
+
+
 class ROICreatorWidget(VLayoutWidget):
     '''
     Create ROIs from polygons
     '''
     edited = QtCore.Signal(object) # List[ROI]
+    MOVE_SCALE = 0.3
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -29,15 +56,30 @@ class ROICreatorWidget(VLayoutWidget):
         self._roi_grp = QButtonGroup(self)
         for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn]:
             self._roi_grp.addButton(btn)
+        self.addSpacing(10)
+        self._scale_sld = FloatSlider(step=0.01)
+        scale_wdg = HLayoutWidget()
+        scale_wdg.addWidget(QLabel('Scale:'))
+        scale_wdg.addWidget(self._scale_sld)
+        self.addWidget(scale_wdg)
+        touch_grp = VGroupBox('Move')
+        self._touchpad = TouchpadWidget()
+        self._touchpad.setFixedSize(200, 133)
+        touch_grp.addWidget(self._touchpad)
+        self.addWidget(touch_grp)
 
         # State
         self._polys = []
+        self._offset = np.array([0, 0])
         self._poly_btn.setChecked(True)
-        self._chull_box.setChecked(False)
+        self._chull_box.setChecked(True)
+        self._scale_sld.setData(0.8, 1.2, 1.0)
 
         # Listeners
         for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn, self._chull_box]:
             btn.toggled.connect(self._recompute)
+        self._touchpad.moved.connect(self._on_touchpad_move)
+        self._scale_sld.valueChanged.connect(lambda _: self._recompute())
 
     def setData(self, polys: List[PlanarPolygon]):
         self._polys = polys
@@ -52,8 +94,10 @@ class ROICreatorWidget(VLayoutWidget):
         use_chull = self._chull_box.isChecked()
         mk_ell = self._ellipse_btn.isChecked()
         mk_circ = self._circle_btn.isChecked()
+        scale = self._scale_sld.value()
         rois = []
         for poly in self._polys:
+            poly = poly * scale + self._offset * self.MOVE_SCALE
             if mk_poly:
                 if use_chull: 
                     roi = poly.hullify()
@@ -67,6 +111,10 @@ class ROICreatorWidget(VLayoutWidget):
                 raise Exception('Invalid ROI type')
             rois.append(roi)
         self.edited.emit(rois)
+
+    def _on_touchpad_move(self, dx: np.ndarray):
+        self._offset += dx
+        self._recompute()
 
 class ManualSegmentorWidget(SegmentorWidget):
     def __init__(self, *args, **kwargs):
