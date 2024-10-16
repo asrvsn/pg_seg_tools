@@ -5,6 +5,7 @@ from typing import List, Tuple, Union, Any
 import abc
 import os
 import pickle
+import math
 from qtpy import QtCore
 from qtpy import QtGui, QtWidgets
 from qtpy.QtCore import Qt, QTimer, QObject
@@ -304,7 +305,7 @@ class IntegerSlider(HLayoutWidget):
     '''
     Integer slider with single handle
     '''
-    def __init__(self, *args, mode: str='slide', **kwargs):
+    def __init__(self, *args, mode: str='slide', step_size=1, **kwargs):
         super().__init__(*args, **kwargs)
         if mode == 'slide':
             self._slider = QSlider()
@@ -316,7 +317,7 @@ class IntegerSlider(HLayoutWidget):
         self._label = QLabel()
         self._layout.addWidget(self._label)
         self._slider.setOrientation(QtCore.Qt.Horizontal)
-        self._slider.setSingleStep(1)
+        self._slider.setSingleStep(step_size)
         self._slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
         self._slider.valueChanged.connect(lambda x: self._label.setText(f'{x}/{self._max}'))
@@ -330,6 +331,41 @@ class IntegerSlider(HLayoutWidget):
         self._slider.setMaximum(max)
         self._slider.setValue(x)
         self._label.setText(f'{x}/{max}')
+
+class FloatSlider(HLayoutWidget):
+    '''
+    Float slider with single handle
+    '''
+    valueChanged = QtCore.Signal(float)
+
+    def __init__(self, *args, step: float=1., **kwargs):
+        super().__init__(*args, **kwargs)
+        assert step >= 0
+        self._step = step
+        self._slider = QScrollBar()
+        self._layout.addWidget(self._slider)
+        self._label = QLabel()
+        self._layout.addWidget(self._label)
+        self._slider.setOrientation(QtCore.Qt.Horizontal)
+        self._slider.setSingleStep(1)
+        self._slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+
+        self._slider.valueChanged.connect(self._value_changed)
+
+    def setData(self, min: float, max: float, x: float):
+        assert min <= x <= max, 'x must be within min and max'
+        self._slider.setMinimum(math.floor(min / self._step))
+        self._slider.setMaximum(math.ceil(max / self._step))
+        self._slider.setValue(round(x / self._step))
+        self._label.setText(f'{x:.2f}')
+
+    def value(self) -> float:
+        return float(self._step * self._slider.value())
+        
+    def _value_changed(self, x: int):
+        y = float(x * self._step)
+        self._label.setText(f'{y:.2f}')
+        self.valueChanged.emit(y)
 
 class IntegerRangeSlider(HLayoutWidget):
     '''
