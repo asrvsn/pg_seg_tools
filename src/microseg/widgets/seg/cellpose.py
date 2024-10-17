@@ -43,12 +43,6 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         self._cp_wdg.addWidget(self._cp_btn)
         self._main.addSpacing(10)
 
-        ## For polygon -> ROI postprocessing
-        self._roi_wdg = VGroupBox('ROI settings')
-        self._main.addWidget(self._roi_wdg)
-        self._roi_creator = ROICreatorWidget()
-        self._roi_wdg.addWidget(self._roi_creator)
-
         # State
         self._set_cp_model(0)
         self._cp_cellprob_sld.setData(-3, 4, 0.)
@@ -56,21 +50,20 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         # Listeners
         self._cp_mod_drop.currentIndexChanged.connect(self._set_cp_model)
         self._cp_btn.clicked.connect(self._recompute)
-        self._roi_creator.edited.connect(self.propose.emit) # Bubble from the editor
 
     ''' Overrides '''
 
     def name(self) -> str:
         return 'Cellpose (multi)'
 
-    def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[ROI]:
+    def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
         ''' 
         Recomputes only the mask/poly post-processing step if no existing cellpose mask exists.
         Cellpose mask is re-computed only on explicit user request.
         '''
         if self._cp_polys is None:
             self._update_cp_polys(img, poly)
-        self._roi_creator.setData(self._cp_polys)
+        return self._cp_polys
 
     def reset_state(self):
         super().reset_state()
@@ -128,7 +121,7 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         '''
         assert not self._poly is None and not self._img is None
         self._update_cp_polys(self._img, self._poly)
-        self._propose()
+        self._set_proposals(self._cp_polys)
 
 
 class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):

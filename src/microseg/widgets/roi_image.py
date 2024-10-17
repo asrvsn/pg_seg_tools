@@ -183,14 +183,6 @@ class ROIsCreator(PaneledWidget):
         self._bottom_layout.addSpacing(10)
         self._options_box = QCheckBox('Show options')
         self._bottom_layout.addWidget(self._options_box)
-        self._bottom_layout.addSpacing(10)
-        self._proposals_wdg = HLayoutWidget()
-        self._proposals_lbl = QLabel()
-        self._proposals_wdg.addWidget(self._proposals_lbl)
-        self._proposals_wdg.addSpacing(10)
-        self._proposals_box = QCheckBox('Proposals only')
-        self._proposals_wdg.addWidget(self._proposals_box)
-        self._bottom_layout.addWidget(self._proposals_wdg)
         self._bottom_layout.addStretch()
         self._bottom_layout.addWidget(QLabel('Chan:'))
         self._chan_slider = IntegerSlider(mode='scroll')
@@ -214,7 +206,6 @@ class ROIsCreator(PaneledWidget):
         self._rgb_box.setChecked(True)
         self._options_box.setChecked(True)
         self._chan_slider.setData(0, 255, 0)
-        self._proposals_box.setChecked(False)
         self._update_settings(redraw=False)
 
         # Listeners
@@ -223,14 +214,19 @@ class ROIsCreator(PaneledWidget):
         self._options_box.stateChanged.connect(lambda _: self._update_settings(redraw=False))
         self._rgb_box.stateChanged.connect(lambda _: self._update_settings(redraw=True))
         self._chan_slider.valueChanged.connect(lambda _: self._update_settings(redraw=True))
-        self._proposals_box.stateChanged.connect(lambda _: self._set_only_proposals())
         self._widget.startDrawing.connect(lambda: self._draw_btn.setEnabled(False))
         self._widget.finishDrawing.connect(self._add_from_child)
         self._widget.delete.connect(self._delete_from_child)
-        options_sc = QShortcut(QKeySequence('O'), self)
-        options_sc.activated.connect(lambda: self._options_box.setChecked(not self._options_box.isChecked()))
-        mode_sc = QShortcut(QKeySequence('M'), self)
-        mode_sc.activated.connect(lambda: self._mode_drop.setCurrentIndex((self._mode_drop.currentIndex() + 1) % len(self._segmentors)))
+
+    ''' Overrides '''
+
+    def keyPressEvent(self, evt):
+        if evt.key() == Qt.Key_O:
+            self._options_box.setChecked(not self._options_box.isChecked())
+        elif evt.key() == Qt.Key_M:
+            self._mode_drop.setCurrentIndex((self._mode_drop.currentIndex() + 1) % len(self._segmentors))
+        else:
+            super().keyPressEvent(evt)
 
     ''' API methods '''
 
@@ -260,6 +256,7 @@ class ROIsCreator(PaneledWidget):
     def setROIs(self, rois: List[LabeledROI]):
         assert not self._is_proposing
         self._rois = rois
+        self._proposed_rois = []
         self._widget.setROIs(rois)
         self._count_lbl.setText(f'Current: {len(rois)}')
 
@@ -279,14 +276,8 @@ class ROIsCreator(PaneledWidget):
         self._show_options = self._options_box.isChecked()
         self._interpret_rgb = self._rgb_box.isChecked()
         self._chan = self._chan_slider.value()
-        self._only_proposals = self._proposals_box.isChecked()
         if redraw:
             self.setImage(self._img)
-
-    def _set_only_proposals(self):
-        assert self._is_proposing
-        self._update_settings(redraw=False)
-        self._propose(self._proposed_rois)
 
     def _get_img(self) -> np.ndarray:
         ''' Get displayed image using current settings '''
@@ -316,10 +307,8 @@ class ROIsCreator(PaneledWidget):
         Process delete() signal from child. 
         '''
         if self._is_proposing: 
-            # Allow deletions from proposals only, shift index accordingly
-            n = len(self._rois)
-            proposals = [r for i, r in enumerate(self._proposed_rois) if not (i + n in indices)]
-            self._propose(proposals)
+            # Pass deletion indices to segmentor
+            self._segmentors[self._mode].delete(indices)
         else: 
             # Convert indices to labels and bubble to parent
             lbls = {self._rois[i].lbl for i in indices}
@@ -334,11 +323,8 @@ class ROIsCreator(PaneledWidget):
             self._set_proposing(True)
         self._proposed_rois = rois 
         proposed_labeled = [LabeledROI(65, r) for r in rois] # All with that color
-        if self._only_proposals:
-            self._widget.setROIs(proposed_labeled) 
-        else:
-            self._widget.setROIs(self._rois + proposed_labeled)
-        self._proposals_lbl.setText(f'Proposals: {len(self._proposed_rois)}')
+        self._widget.setROIs(proposed_labeled) 
+        self._count_lbl.setText(f'Proposed: {len(rois)}')
 
     def _add(self):
         '''
@@ -346,9 +332,10 @@ class ROIsCreator(PaneledWidget):
         '''
         assert self._is_proposing
         self._set_proposing(False)
-        if len(self._proposed_rois) > 0:
+        if len(self._proposed_rois) == 0: # Shortcut at this level
+            self.setROIs(self._rois)
+        else:
             self.add.emit(self._proposed_rois)
-        self._proposed_rois = []
 
     def _cancel(self):
         '''
@@ -356,18 +343,15 @@ class ROIsCreator(PaneledWidget):
         '''
         assert self._is_proposing
         self._set_proposing(False)
-        self._proposed_rois = []
-        self._widget.setROIs(self._rois)
+        self.setROIs(self._rois)
 
     def _set_proposing(self, bit: bool):
         self._is_proposing = bit
         if bit:
-            self._proposals_wdg.show()
             self._draw_btn.setEnabled(False)
             self._mode_drop.setEnabled(False)
             self._widget.setDrawable(False)
         else:
-            self._proposals_wdg.hide()
             self._draw_btn.setEnabled(True)
             self._mode_drop.setEnabled(True)
             self._widget.setDrawable(True)
