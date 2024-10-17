@@ -308,8 +308,7 @@ class ROIsCreator(PaneledWidget):
             self._segmentors[self._mode].delete(indices)
         else: 
             # Convert indices to labels and bubble to parent
-            lbls = {self._rois[i].lbl for i in indices}
-            self.delete.emit(lbls) 
+            self.delete.emit({self._rois[i].lbl for i in indices}) 
 
     def _propose(self, rois: List[ROI]):
         '''
