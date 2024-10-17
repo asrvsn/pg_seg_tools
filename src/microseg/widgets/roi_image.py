@@ -202,7 +202,6 @@ class ROIsCreator(PaneledWidget):
         self._img = None
         self._rois = []
         self._set_proposing(False)
-        self._proposed_rois = []
         self._rgb_box.setChecked(True)
         self._options_box.setChecked(True)
         self._chan_slider.setData(0, 255, 0)
@@ -256,7 +255,6 @@ class ROIsCreator(PaneledWidget):
     def setROIs(self, rois: List[LabeledROI]):
         assert not self._is_proposing
         self._rois = rois
-        self._proposed_rois = []
         self._widget.setROIs(rois)
         self._count_lbl.setText(f'Current: {len(rois)}')
 
@@ -295,7 +293,6 @@ class ROIsCreator(PaneledWidget):
         Process add() signal from child
         '''
         assert not self._is_proposing
-        assert len(self._proposed_rois) == 0
         img = self._get_img()
         if self._show_options:
             self._segmentors[self._mode].prompt(img, poly)
@@ -321,21 +318,22 @@ class ROIsCreator(PaneledWidget):
         '''
         if not self._is_proposing:
             self._set_proposing(True)
-        self._proposed_rois = rois 
-        proposed_labeled = [LabeledROI(65, r) for r in rois] # All with that color
-        self._widget.setROIs(proposed_labeled) 
+        lrois = [LabeledROI(65, r) for r in rois] # All with that color
+        self._widget.setROIs(lrois) 
         self._count_lbl.setText(f'Proposed: {len(rois)}')
 
-    def _add(self):
+    def _add(self, rois: List[ROI]):
         '''
         Process add() signal from segmentor, which asynchronously bubbles add() signal from child.
         '''
         assert self._is_proposing
         self._set_proposing(False)
-        if len(self._proposed_rois) == 0: # Shortcut at this level
+        if len(rois) == 0: 
+            # Short-circuit at this level
             self.setROIs(self._rois)
         else:
-            self.add.emit(self._proposed_rois)
+            # Bubble to parent
+            self.add.emit(rois)
 
     def _cancel(self):
         '''

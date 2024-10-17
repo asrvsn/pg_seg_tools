@@ -76,6 +76,7 @@ class ROICreatorWidget(VLayoutWidget):
 
         # State
         self._polys = []
+        self._rois = []
         self._offset = np.array([0, 0])
         self._poly_btn.setChecked(True)
         self._chull_box.setChecked(False)
@@ -89,10 +90,17 @@ class ROICreatorWidget(VLayoutWidget):
         self._touchpad.moved.connect(self._on_touchpad_move)
         self._scale_sld.valueChanged.connect(lambda _: self._recompute())
 
-    def setData(self, polys: List[PlanarPolygon]):
+    ''' API '''
+
+    def setPolys(self, polys: List[PlanarPolygon]):
         self._polys = polys
         self._simplify_sld.setValue(0.)
         self._recompute()
+
+    def getROIs(self) -> List[ROI]:
+        return self._rois
+
+    ''' Private methods '''
 
     def _recompute(self):
         mk_poly = self._poly_btn.isChecked()
@@ -105,7 +113,7 @@ class ROICreatorWidget(VLayoutWidget):
         mk_circ = self._circle_btn.isChecked()
         scale = self._scale_sld.value()
         simplify = self._simplify_sld.value()
-        rois = []
+        self._rois = []
         for poly in self._polys:
             poly = poly * scale + self._offset * self.MOVE_SCALE
             if mk_poly:
@@ -120,8 +128,8 @@ class ROICreatorWidget(VLayoutWidget):
                 roi = Circle.from_poly(poly)
             else:
                 raise Exception('Invalid ROI type')
-            rois.append(roi)
-        self.edited.emit(rois)
+            self._rois.append(roi)
+        self.edited.emit(self._rois)
 
     def _on_touchpad_move(self, dx: np.ndarray):
         ''' Compute offset by integrating touchpad movement '''
@@ -130,7 +138,7 @@ class ROICreatorWidget(VLayoutWidget):
 
 class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
     propose = QtCore.Signal(object) # List[ROI]
-    add = QtCore.Signal() 
+    add = QtCore.Signal(object) # List[ROI] 
     cancel = QtCore.Signal()
     
     def __init__(self, *args, **kwargs):
@@ -218,7 +226,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         Fires the add() signal immediately after proposing.
         '''
         self._set_proposals(self.make_proposals(img, poly))
-        self.add.emit()
+        self.add.emit(self._roi_creator.getROIs())
         self.reset_state()
 
     def delete(self, indices: Set[int]):
@@ -237,7 +245,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         '''
         assert not self._poly is None
         self.hide()
-        self.add.emit()
+        self.add.emit(self._roi_creator.getROIs())
         self.reset_state()
 
     def _cancel(self):
@@ -247,4 +255,4 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
 
     def _set_proposals(self, polys: List[PlanarPolygon]):
         self._proposed_polys = polys
-        self._roi_creator.setData(polys)
+        self._roi_creator.setPolys(polys)
