@@ -338,10 +338,13 @@ class FloatSlider(HLayoutWidget):
     '''
     valueChanged = QtCore.Signal(float)
 
-    def __init__(self, *args, step: float=1., **kwargs):
+    def __init__(self, *args, label: str=None, step: float=1., **kwargs):
         super().__init__(*args, **kwargs)
-        assert step >= 0
+        assert step > 0
         self._step = step
+        self._prec = -int(math.log10(step - math.floor(step)))
+        if not (label is None):
+            self._layout.addWidget(QLabel(label))
         self._slider = QScrollBar()
         self._layout.addWidget(self._slider)
         self._label = QLabel()
@@ -356,15 +359,18 @@ class FloatSlider(HLayoutWidget):
         assert min <= x <= max, 'x must be within min and max'
         self._slider.setMinimum(math.floor(min / self._step))
         self._slider.setMaximum(math.ceil(max / self._step))
+        self.setValue(x)
+
+    def setValue(self, x: float):
         self._slider.setValue(round(x / self._step))
-        self._label.setText(f'{x:.2f}')
+        self._label.setText(f'{x:.{self._prec}f}')
 
     def value(self) -> float:
         return float(self._step * self._slider.value())
-        
+
     def _value_changed(self, x: int):
         y = float(x * self._step)
-        self._label.setText(f'{y:.2f}')
+        self._label.setText(f'{y:.{self._prec}f}')
         self.valueChanged.emit(y)
 
 class IntegerRangeSlider(HLayoutWidget):

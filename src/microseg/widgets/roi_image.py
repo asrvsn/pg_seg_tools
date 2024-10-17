@@ -14,14 +14,15 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     '''
     Editable widget for displaying and drawing ROIs on an image
     '''
-    add = QtCore.Signal(object) # PlanarPolygon
+    startDrawing = QtCore.Signal() 
+    finishDrawing = QtCore.Signal(object) # PlanarPolygon
     delete = QtCore.Signal(object) # Set[int], indices into ROIs
 
-    def __init__(self, editable: bool=False, **kwargs):
+    def __init__(self, drawable: bool=False, **kwargs):
         super().__init__(**kwargs)
-        self._editable = editable
 
         # State
+        self._is_drawable = drawable
         self._rois: List[LabeledROI] = []
         self._items: List[LabeledROIItem] = []
         self._selected = []
@@ -30,12 +31,20 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         self._reset_drawing_state()
 
         # Listeners
-        if editable:
-            self._add_sc('Delete', lambda: self._delete())
-            self._add_sc('Backspace', lambda: self._delete())
-            self._add_sc('E', lambda: self._edit())
-        self._add_sc('Escape', lambda: self._escape())
         self.scene().sigMouseMoved.connect(self._mouse_move)
+
+    ''' Overrides '''
+
+    def keyPressEvent(self, evt):
+        k = evt.key()
+        if k == Qt.Key_Escape:
+            self._escape()
+        elif k == Qt.Key_Delete or k == Qt.Key_Backspace:
+            self._delete()
+        elif k == Qt.Key_E:
+            self.edit()
+        else:
+            super().keyPressEvent(evt)
 
     ''' API methods '''
 
@@ -61,12 +70,19 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             self._items.append(item)
         self._reset_drawing_state()
 
-    ''' Private methods '''
+    def setDrawable(self, bit: bool):
+        self._is_drawable = bit
 
-    def _add_sc(self, key: str, fun: Callable):
-        sc = QShortcut(QKeySequence(key), self)
-        sc.activated.connect(fun)
-        self._shortcuts.append(sc)
+    def edit(self):
+        if self._is_drawable and not self._is_drawing:
+            print('edit')
+            self.startDrawing.emit()
+            self._select(None)
+            self._is_drawing = True
+            self._vb = self.getViewBox()
+            self._vb.setMouseEnabled(x=False, y=False)
+
+    ''' Private methods '''
 
     def _listen_item(self, i: int, item: LabeledROIItem):
         item.sigClicked.connect(lambda: self._select(i))
@@ -87,17 +103,9 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         self._selected = []
 
     def _delete(self):
-        if self._editable and len(self._selected) > 0:
+        if len(self._selected) > 0:
             print(f'propose delete {len(self._selected)} things')
             self.delete.emit(set(self._selected))
-
-    def _edit(self):
-        print('edit')
-        if self._editable and not self._is_drawing:
-            self._select(None)
-            self._is_drawing = True
-            self._vb = self.getViewBox()
-            self._vb.setMouseEnabled(x=False, y=False)
 
     def _escape(self):
         print('escape')
@@ -139,7 +147,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
                     poly = self._drawn_item.toROI(self._shape()).roi
                     self.removeItem(self._drawn_item)
                     self._reset_drawing_state()
-                    self.add.emit(poly)
+                    self.finishDrawing.emit(poly)
 
 class ROIsCreator(PaneledWidget):
     '''
@@ -162,6 +170,9 @@ class ROIsCreator(PaneledWidget):
         # Widgets
         self._widget = ROIsImageWidget(editable=True)
         self._main_layout.addWidget(self._widget)
+        self._bottom_layout.addSpacing(10)
+        self._draw_btn = QPushButton('Draw')
+        self._bottom_layout.addWidget(self._draw_btn)
         self._bottom_layout.addSpacing(10)
         self._bottom_layout.addWidget(QLabel('Mode:'))
         self._bottom_layout.addSpacing(10)
@@ -207,12 +218,14 @@ class ROIsCreator(PaneledWidget):
         self._update_settings(redraw=False)
 
         # Listeners
+        self._draw_btn.clicked.connect(lambda: self._widget.edit())
         self._mode_drop.currentIndexChanged.connect(self._set_mode)
         self._options_box.stateChanged.connect(lambda _: self._update_settings(redraw=False))
         self._rgb_box.stateChanged.connect(lambda _: self._update_settings(redraw=True))
         self._chan_slider.valueChanged.connect(lambda _: self._update_settings(redraw=True))
         self._proposals_box.stateChanged.connect(lambda _: self._set_only_proposals())
-        self._widget.add.connect(self._add_from_child)
+        self._widget.startDrawing.connect(lambda: self._draw_btn.setEnabled(False))
+        self._widget.finishDrawing.connect(self._add_from_child)
         self._widget.delete.connect(self._delete_from_child)
         options_sc = QShortcut(QKeySequence('O'), self)
         options_sc.activated.connect(lambda: self._options_box.setChecked(not self._options_box.isChecked()))
@@ -350,7 +363,11 @@ class ROIsCreator(PaneledWidget):
         self._is_proposing = bit
         if bit:
             self._proposals_wdg.show()
+            self._draw_btn.setEnabled(False)
             self._mode_drop.setEnabled(False)
+            self._widget.setDrawable(False)
         else:
             self._proposals_wdg.hide()
+            self._draw_btn.setEnabled(True)
             self._mode_drop.setEnabled(True)
+            self._widget.setDrawable(True)

@@ -38,7 +38,7 @@ class ImageSegmentorApp(SaveableApp):
 
         # Run data load and rest of initialization in superclass
         super().__init__(
-            f'Image {desc} segmentor',
+            f'Segmenting {desc} on image: {os.path.basename(img_path)}',
             f'{os.path.splitext(img_path)[0]}.{desc}',
         *args, **kwargs)
         self.setCentralWidget(self._main)

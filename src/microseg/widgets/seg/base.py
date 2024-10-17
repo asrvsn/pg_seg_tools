@@ -29,7 +29,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         self._bottom.addWidget(self._cancel_btn)
         self.addWidget(self._bottom)
 
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint)
         self.setWindowModality(Qt.NonModal)
         self.setWindowTitle(self.name())
 
@@ -50,7 +50,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
     def make_proposals(self, img: np.ndarray, poly: PlanarPolygon):
         '''
         From a prompt image and polygon, produce a list of candidate ROIs, given the current settings.
-        Should fire the propose() signal at least one synchronously using these ROIs.
+        Should fire the propose() signal at least once synchronously using these ROIs.
         '''
         pass
 
@@ -60,6 +60,17 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         '''
         self._img = None
         self._poly = None
+
+    def closeEvent(self, evt):
+        self._cancel()
+
+    def keyPressEvent(self, evt):
+        if evt.key() == Qt.Key_Escape:
+            self._cancel()
+        elif evt.key() == Qt.Key_Return:
+            self._ok()
+        else:
+            super().keyPressEvent(evt)
 
     ''' API '''
 
@@ -74,7 +85,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
 
     def prompt_immediate(self, img: np.ndarray, poly: PlanarPolygon):
         '''
-        Fires the add() signal immediately.
+        Fires the add() signal immediately after proposing.
         '''
         self.make_proposals(img, poly)
         self.add.emit()
@@ -83,6 +94,9 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
     ''' Private methods '''
 
     def _ok(self):
+        '''
+        Fire the add() signal asynchronously.
+        '''
         assert not self._poly is None
         self.hide()
         self.add.emit()

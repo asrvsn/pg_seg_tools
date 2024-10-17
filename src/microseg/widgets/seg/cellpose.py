@@ -6,6 +6,9 @@ from qtpy.QtWidgets import QCheckBox, QComboBox, QLabel, QPushButton, QRadioButt
 import cellpose
 import cellpose.models
 import upolygon
+from scipy.ndimage import find_objects
+import cv2
+import pdb
 
 from matgeo import PlanarPolygon, Circle, Ellipse
 from .base import *
@@ -40,7 +43,7 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         self._cp_wdg.addWidget(self._cp_btn)
         self._main.addSpacing(10)
 
-        ## For mask -> ROI postprocessing
+        ## For polygon -> ROI postprocessing
         self._roi_wdg = VGroupBox('ROI settings')
         self._main.addWidget(self._roi_wdg)
         self._roi_creator = ROICreatorWidget()
@@ -72,6 +75,8 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
     def reset_state(self):
         super().reset_state()
         self._cp_polys = None
+        if hasattr(self, '_cp_cellprob_sld'):
+            self._cp_cellprob_sld.setValue(0.)
 
     ''' Private methods '''
 
@@ -94,14 +99,19 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         )[0]
         assert mask.shape == img.shape[:2]
         cp_polys = []
-        labels = np.unique(mask)
-        for l in labels:
-            if l == 0:
+        slices = find_objects(mask)
+        for i, si in enumerate(slices):
+            if si is None:
                 continue
-            l_mask = mask == l
-            _, contours, __ = upolygon.find_contours(l_mask.astype(np.uint8))
+            sr, sc = si
+            i_mask = mask[sr, sc] == (i+1)
+            # pdb.set_trace()
+            _, contours, __ = upolygon.find_contours(i_mask.astype(np.uint8))
             contours = [np.array(c).reshape(-1, 2) for c in contours] # Convert X, Y, X, Y,... to X, Y
-            contour = max(contours, key=lambda c: c.shape[0]) # Find longest contour
+            contour = max(contours, key=lambda c: cv2.contourArea(c)) # Find max-area contour
+            if contour.shape[0] < 3:
+                continue
+            contour = contour + np.array([sc.start, sr.start])
             poly = PlanarPolygon(contour)
             cp_polys.append(poly)
         return cp_polys
@@ -139,8 +149,8 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
         ymin = max(0, math.floor(center[1] - radius))
         ymax = min(img.shape[0], math.ceil(center[1] + radius))
         img = img[ymin:ymax, xmin:xmax]
-        offset = np.array([xmin, ymin])
         # Compute cellpose on sub-img & translate back
+        offset = np.array([xmin, ymin])
         polys = super()._compute_cp_polys(img, poly - offset)
         if len(polys) > 0:
             poly = min(polys, key=lambda p: np.linalg.norm(p.centroid() + offset - center))

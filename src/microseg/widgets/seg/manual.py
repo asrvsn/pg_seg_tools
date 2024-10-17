@@ -43,11 +43,13 @@ class ROICreatorWidget(VLayoutWidget):
         super().__init__(*args, **kwargs)
 
         # Widgets
-        self._poly_wdg = HLayoutWidget()
         self._poly_btn = QRadioButton('Polygon')
-        self._poly_wdg.addWidget(self._poly_btn)
+        self.addWidget(self._poly_btn)
+        self._poly_wdg = VGroupBox()
         self._chull_box = QCheckBox('Convex hull')
         self._poly_wdg.addWidget(self._chull_box)
+        self._simplify_sld = FloatSlider(label='Simplify:', step=0.001)
+        self._poly_wdg.addWidget(self._simplify_sld)
         self.addWidget(self._poly_wdg)
         self._ellipse_btn = QRadioButton('Ellipse')
         self.addWidget(self._ellipse_btn)
@@ -57,11 +59,8 @@ class ROICreatorWidget(VLayoutWidget):
         for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn]:
             self._roi_grp.addButton(btn)
         self.addSpacing(10)
-        self._scale_sld = FloatSlider(step=0.01)
-        scale_wdg = HLayoutWidget()
-        scale_wdg.addWidget(QLabel('Scale:'))
-        scale_wdg.addWidget(self._scale_sld)
-        self.addWidget(scale_wdg)
+        self._scale_sld = FloatSlider(label='Scale:', step=0.01)
+        self.addWidget(self._scale_sld)
         touch_grp = VGroupBox('Move')
         self._touchpad = TouchpadWidget()
         self._touchpad.setFixedSize(200, 133)
@@ -72,33 +71,52 @@ class ROICreatorWidget(VLayoutWidget):
         self._polys = []
         self._offset = np.array([0, 0])
         self._poly_btn.setChecked(True)
-        self._chull_box.setChecked(True)
+        self._chull_box.setChecked(False)
+        self._simplify_sld.setData(0., 0.01, 0.)
         self._scale_sld.setData(0.8, 1.2, 1.0)
 
         # Listeners
         for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn, self._chull_box]:
             btn.toggled.connect(self._recompute)
+        self._simplify_sld.valueChanged.connect(lambda _: self._recompute())
         self._touchpad.moved.connect(self._on_touchpad_move)
         self._scale_sld.valueChanged.connect(lambda _: self._recompute())
 
     def setData(self, polys: List[PlanarPolygon]):
         self._polys = polys
+        self._simplify_sld.setValue(0.)
         self._recompute()
+
+    # Not firing
+    # def keyPressEvent(self, evt):
+    #     if evt.key() == Qt.Key_P:
+    #         print('received p')
+    #         self._poly_btn.setChecked(True)
+    #     elif evt.key() == Qt.Key_H:
+    #         self._chull_box.setChecked(not self._chull_box.isChecked())
+    #     elif evt.key() == Qt.Key_E:
+    #         self._ellipse_btn.setChecked(True)
+    #     elif evt.key() == Qt.Key_C:
+    #         self._circle_btn.setChecked(True)
+    #     else:
+    #         super().keyPressEvent(evt)
 
     def _recompute(self):
         mk_poly = self._poly_btn.isChecked()
         if mk_poly:
-            self._chull_box.setEnabled(True)
+            self._poly_wdg.setEnabled(True)
         else:
-            self._chull_box.setEnabled(False)
+            self._poly_wdg.setEnabled(False)
         use_chull = self._chull_box.isChecked()
         mk_ell = self._ellipse_btn.isChecked()
         mk_circ = self._circle_btn.isChecked()
         scale = self._scale_sld.value()
+        simplify = self._simplify_sld.value()
         rois = []
         for poly in self._polys:
             poly = poly * scale + self._offset * self.MOVE_SCALE
             if mk_poly:
+                poly = poly.simplify(simplify)
                 if use_chull: 
                     roi = poly.hullify()
                 else:
@@ -113,6 +131,7 @@ class ROICreatorWidget(VLayoutWidget):
         self.edited.emit(rois)
 
     def _on_touchpad_move(self, dx: np.ndarray):
+        ''' Compute offset by integrating touchpad movement '''
         self._offset += dx
         self._recompute()
 
