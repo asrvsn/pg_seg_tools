@@ -305,8 +305,10 @@ class IntegerSlider(HLayoutWidget):
     '''
     Integer slider with single handle
     '''
-    def __init__(self, *args, mode: str='slide', step_size=1, **kwargs):
+    def __init__(self, *args, label: str=None, mode: str='slide', step_size=1, **kwargs):
         super().__init__(*args, **kwargs)
+        if not (label is None):
+            self._layout.addWidget(QLabel(label))
         if mode == 'slide':
             self._slider = QSlider()
             self._slider.setTickPosition(QSlider.TicksBelow)

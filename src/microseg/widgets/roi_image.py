@@ -4,7 +4,9 @@ Image + ROI overlays
 - Support for semi-automatically drawing polygons via standard segmentation algorithms (cellpose, watershed, etc.)
 '''
 from typing import Set, Type
-from qtpy.QtWidgets import QRadioButton, QLabel, QCheckBox, QComboBox
+from qtpy.QtWidgets import QRadioButton, QLabel, QCheckBox, QComboBox, QLabel
+import skimage 
+import skimage.exposure
 
 from .pg import *
 from .roi import *
@@ -23,9 +25,10 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
 
         # State
         self._is_drawable = drawable
+        self._show_rois = True
         self._rois: List[LabeledROI] = []
         self._items: List[LabeledROIItem] = []
-        self._selected = []
+        self._selected = set()
         self._shortcuts = []
         self._vb = None
         self._reset_drawing_state()
@@ -43,6 +46,10 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             self._delete()
         elif k == Qt.Key_E:
             self.edit()
+        elif k == Qt.Key_S:
+            self.selectDraw()
+        elif evt.modifiers() == Qt.ControlModifier and k == Qt.Key_A:
+            self._select(set(range(len(self._rois))))
         else:
             super().keyPressEvent(evt)
 
@@ -57,69 +64,85 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
 
     def setROIs(self, rois: List[LabeledROI]):
         # Remove previous rois
-        self._selected = []
+        self._selected = set()
         self._rois = rois
         for item in self._items:
             self.removeItem(item)
         # Add new rois
         self._items = []
-        for i, roi in enumerate(rois):
-            item = roi.toItem(self._shape())
-            self.addItem(item)
-            self._listen_item(i, item)
-            self._items.append(item)
+        if self._show_rois:
+            for i, roi in enumerate(rois):
+                item = roi.toItem(self._shape())
+                self.addItem(item)
+                self._listen_item(i, item)
+                self._items.append(item)
         self._reset_drawing_state()
 
     def setDrawable(self, bit: bool):
         self._is_drawable = bit
 
+    def setShowROIs(self, bit: bool):
+        self._show_rois = bit
+        self.setROIs(self._rois)
+
     def edit(self):
-        if self._is_drawable and not self._is_drawing:
+        if self._is_drawable and not self._is_drawing and not self._is_selecting:
             print('edit')
             self.startDrawing.emit()
-            self._select(None)
-            self._is_drawing = True
-            self._vb = self.getViewBox()
-            self._vb.setMouseEnabled(x=False, y=False)
+            self._start_drawing()
+    
+    def selectDraw(self):
+        if not self._is_drawing:
+            print('selectDraw')
+            self._is_selecting = True
+            self._start_drawing()
 
     ''' Private methods '''
 
     def _listen_item(self, i: int, item: LabeledROIItem):
-        item.sigClicked.connect(lambda: self._select(i))
+        item.sigClicked.connect(lambda: self._select({i}))
 
-    def _select(self, i: Optional[int]):
-        if i is None:
-            self._unselect_all()
-        elif not i in self._selected:
-            if not QGuiApplication.keyboardModifiers() & Qt.ShiftModifier:
-                self._unselect_all()
-            self._selected.append(i)
+    def _select(self, indices: Set[int]):
+        selected = (
+            self._selected | indices if QGuiApplication.keyboardModifiers() & Qt.ShiftModifier
+            else indices
+        )
+        self._unselect_all()
+        for i in selected:
             self._items[i].select()
-        print(f'Selected: {self._selected}')
+        print(f'Selected: {selected}')
+        self._selected = selected
 
     def _unselect_all(self):
         for i in self._selected:
             self._items[i].unselect()
-        self._selected = []
+        self._selected = set()
 
     def _delete(self):
         if len(self._selected) > 0:
             print(f'propose delete {len(self._selected)} things')
-            self.delete.emit(set(self._selected))
+            self.delete.emit(self._selected)
 
     def _escape(self):
         print('escape')
         if not self._drawn_item is None:
             self.removeItem(self._drawn_item)
         self._reset_drawing_state()
-        self._select(None)
+        self._select({})
 
     def _init_drawing_state(self):
         self._drawn_poses = []
 
+    def _start_drawing(self):
+        self._select({})
+        self._is_drawing = True
+        self._vb = self.getViewBox()
+        self._vb.setMouseEnabled(x=False, y=False)
+
     def _reset_drawing_state(self):
         self._init_drawing_state()
         self._is_drawing = False
+        self._is_selecting = False
         self._drawn_item = None
         if not self._vb is None:
             self._vb.setMouseEnabled(x=True, y=True)
@@ -132,7 +155,10 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             if not self._drawn_item is None:
                 self.removeItem(self._drawn_item)
             lroi = LabeledROI(65, PlanarPolygon(vertices, use_chull_if_invalid=True)).fromPyQTOrientation(self._shape())
-            self._drawn_item = lroi.toItem(self._shape()) # Original vertices already in PyQT orientation, do the identity transform
+            self._drawn_item = lroi.toItem(
+                self._shape(), # Original vertices already in PyQT orientation, do the identity transform
+                dashed=self._is_selecting,
+            ) 
             self.addItem(self._drawn_item)
 
     def _mouse_move(self, pos):
@@ -144,12 +170,19 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
             else:
                 if not self._drawn_item is None:
                     print('ending draw')
-                    poly = self._drawn_item.toROI(self._shape()).roi
+                    lroi = self._drawn_item.toROI(self._shape())
                     self.removeItem(self._drawn_item)
+                    if self._is_selecting:
+                        post_reset_drawing = lambda: self._select({
+                            i for i, lr in enumerate(self._rois) if 
+                            lr.intersects(lroi) 
+                        })
+                    else:
+                        post_reset_drawing = lambda: self.finishDrawing.emit(lroi.roi)
                     self._reset_drawing_state()
-                    self.finishDrawing.emit(poly)
+                    post_reset_drawing()
 
-class ROIsCreator(PaneledWidget):
+class ROIsCreator(VLayoutWidget):
     '''
     Thin wrapper around ROIsImageWidget for creating ROIs with several options
     - mode selector
@@ -169,53 +202,78 @@ class ROIsCreator(PaneledWidget):
 
         # Widgets
         self._widget = ROIsImageWidget(editable=True)
-        self._main_layout.addWidget(self._widget)
-        self._bottom_layout.addSpacing(10)
+        self.addWidget(self._widget)
+        self._seg_row = HLayoutWidget()
+        self.addWidget(self._seg_row)
+        self._img_row = HLayoutWidget()
+        self.addWidget(self._img_row)
+
+        ## Segmentation row
+        self._seg_row.addSpacing(10)
+        self._seg_row.addWidget(QLabel('Segmentation: '))
+        self._seg_row.addSpacing(10)
+        self._sel_btn = QPushButton('Select')
+        self._seg_row.addWidget(self._sel_btn)
+        self._seg_row.addSpacing(10)
         self._draw_btn = QPushButton('Draw')
-        self._bottom_layout.addWidget(self._draw_btn)
-        self._bottom_layout.addSpacing(10)
-        self._bottom_layout.addWidget(QLabel('Mode:'))
-        self._bottom_layout.addSpacing(10)
+        self._seg_row.addWidget(self._draw_btn)
+        self._seg_row.addSpacing(10)
+        self._seg_row.addWidget(QLabel('Mode:'))
+        self._seg_row.addSpacing(10)
         self._segmentors = [self._add_mode(c) for c in self.AVAIL_MODES]
         self._mode_drop = QComboBox()
         self._mode_drop.addItems([s.name() for s in self._segmentors])
-        self._bottom_layout.addWidget(self._mode_drop)
-        self._bottom_layout.addSpacing(10)
+        self._seg_row.addWidget(self._mode_drop)
+        self._seg_row.addSpacing(10)
         self._options_box = QCheckBox('Show options')
-        self._bottom_layout.addWidget(self._options_box)
-        self._bottom_layout.addStretch()
-        self._bottom_layout.addWidget(QLabel('Chan:'))
-        self._chan_slider = IntegerSlider(mode='scroll')
-        self._bottom_layout.addWidget(self._chan_slider)
-        self._chan_slider.hide()
-        self._rgb_box = QCheckBox('Interpret RGB')
-        self._bottom_layout.addSpacing(10)
-        self._bottom_layout.addWidget(self._rgb_box)
-        self._rgb_box.hide()
+        self._seg_row.addWidget(self._options_box)
+        self._seg_row.addSpacing(10)
+        self._rois_box = QCheckBox('Show ROIs')
+        self._seg_row.addWidget(self._rois_box)
+        self._seg_row.addSpacing(10)
         self._count_lbl = QLabel()
-        self._bottom_layout.addSpacing(10)
-        self._bottom_layout.addWidget(self._count_lbl)
-        self._bottom_layout.addSpacing(10)
+        self._seg_row.addWidget(self._count_lbl)
+
+        ## Image row
+        self._img_row.addSpacing(10)
+        self._img_row.addWidget(QLabel('Image: '))
+        self._img_row.addSpacing(10)
+        self._intens_btn = QCheckBox('Rescale intensity')
+        self._img_row.addWidget(self._intens_btn)
+        self._img_row.addStretch()
+        self._chan_slider = IntegerSlider(label='Chan:', mode='scroll')
+        self._img_row.addWidget(self._chan_slider)
+        self._chan_slider.hide()
+        self._img_row.addSpacing(10)
+        self._rgb_box = QCheckBox('Interpret RGB')
+        self._img_row.addWidget(self._rgb_box)
+        self._rgb_box.hide()
+        self._img_row.addSpacing(10)
 
         # State
         self._mode = 0
         self._img = None
         self._rois = []
         self._set_proposing(False)
+        self._rois_box.setChecked(True)
         self._rgb_box.setChecked(True)
         self._options_box.setChecked(True)
         self._chan_slider.setData(0, 255, 0)
+        self._intens_btn.setChecked(False)
         self._update_settings(redraw=False)
 
         # Listeners
+        self._sel_btn.clicked.connect(lambda: self._widget.selectDraw())
         self._draw_btn.clicked.connect(lambda: self._widget.edit())
         self._mode_drop.currentIndexChanged.connect(self._set_mode)
         self._options_box.stateChanged.connect(lambda _: self._update_settings(redraw=False))
         self._rgb_box.stateChanged.connect(lambda _: self._update_settings(redraw=True))
+        self._rois_box.stateChanged.connect(lambda _: self._set_show_rois(self._rois_box.isChecked()))
         self._chan_slider.valueChanged.connect(lambda _: self._update_settings(redraw=True))
         self._widget.startDrawing.connect(lambda: self._draw_btn.setEnabled(False))
         self._widget.finishDrawing.connect(self._add_from_child)
         self._widget.delete.connect(self._delete_from_child)
+        self._intens_btn.stateChanged.connect(lambda _: self._redraw_img())
 
     ''' Overrides '''
 
@@ -224,6 +282,8 @@ class ROIsCreator(PaneledWidget):
             self._options_box.setChecked(not self._options_box.isChecked())
         elif evt.key() == Qt.Key_M:
             self._mode_drop.setCurrentIndex((self._mode_drop.currentIndex() + 1) % len(self._segmentors))
+        elif evt.key() == Qt.Key_R:
+            self._rois_box.setChecked(not self._rois_box.isChecked())
         else:
             super().keyPressEvent(evt)
 
@@ -250,7 +310,7 @@ class ROIsCreator(PaneledWidget):
                 cmax = img.shape[2] - 1
                 self._chan = min(self._chan, cmax)
                 self._chan_slider.setData(0, cmax, self._chan)
-        self._widget.setImage(self._get_img())
+        self._redraw_img()
 
     def setROIs(self, rois: List[LabeledROI]):
         assert not self._is_proposing
@@ -280,13 +340,27 @@ class ROIsCreator(PaneledWidget):
     def _get_img(self) -> np.ndarray:
         ''' Get displayed image using current settings '''
         if self._img.ndim == 2:
-            return self._img
+            img = self._img
         elif self._img.shape[2] == 1:
-            return self._img[:, :, 0]
+            img = self._img[:, :, 0]
         elif self._interpret_rgb:
-            return self._img
+            img = self._img
         else:
-            return self._img[:, :, self._chan]
+            img = self._img[:, :, self._chan]
+        if self._intens_btn.isChecked():
+            i0, i1 = 2, 98
+            if img.ndim == 2:
+                rng = tuple(np.percentile(img, (i0, i1)))    
+                img = skimage.exposure.rescale_intensity(img, in_range=rng)
+            elif img.ndim == 3:
+                img = np.stack((
+                    skimage.exposure.rescale_intensity(img[:, :, c], in_range=tuple(np.percentile(img[:, :, c], (i0, i1))))
+                    for c in range(img.shape[2])
+                ), axis=-1)
+        return img
+    
+    def _redraw_img(self):
+        self._widget.setImage(self._get_img())
 
     def _add_from_child(self, poly: PlanarPolygon):
         '''
@@ -348,7 +422,15 @@ class ROIsCreator(PaneledWidget):
             self._draw_btn.setEnabled(False)
             self._mode_drop.setEnabled(False)
             self._widget.setDrawable(False)
+            self._set_show_rois(True)
         else:
             self._draw_btn.setEnabled(True)
             self._mode_drop.setEnabled(True)
             self._widget.setDrawable(True)
+
+    def _set_show_rois(self, bit: bool):
+        self._widget.setShowROIs(bit)
+        if bit:
+            self._count_lbl.show()
+        else:
+            self._count_lbl.hide()

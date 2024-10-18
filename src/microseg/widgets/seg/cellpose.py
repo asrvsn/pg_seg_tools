@@ -68,8 +68,8 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
     def reset_state(self):
         super().reset_state()
         self._cp_polys = None
-        if hasattr(self, '_cp_cellprob_sld'):
-            self._cp_cellprob_sld.setValue(0.)
+        # if hasattr(self, '_cp_cellprob_sld'):
+        #     self._cp_cellprob_sld.setValue(0.)
 
     ''' Private methods '''
 
@@ -83,7 +83,8 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         )
 
     def _compute_cp_polys(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
-        diam = poly.circular_radius() * 2
+        # diam = poly.circular_radius() * 2
+        diam = poly.diameter()
         cellprob = self._cp_cellprob_sld.value()
         mask = self._cp_model.eval(
             img,
@@ -145,8 +146,9 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
         # Compute cellpose on sub-img & translate back
         offset = np.array([xmin, ymin])
         polys = super()._compute_cp_polys(img, poly - offset)
+        center_img = np.array(img.shape[:2]) / 2
         if len(polys) > 0:
-            poly = min(polys, key=lambda p: np.linalg.norm(p.centroid() + offset - center))
+            poly = min(polys, key=lambda p: np.linalg.norm(p.centroid() - center_img))
             return [poly + offset]
         else:
             return []

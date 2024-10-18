@@ -54,8 +54,10 @@ class HLayoutWidget(StyledWidget):
 	def addSpacing(self, s: int):
 		self._layout.addSpacing(s)
 
-class VLayoutWidget(StyledWidget):
+	def addStretch(self):
+		self._layout.addStretch()
 
+class VLayoutWidget(StyledWidget):
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
 		self._layout = VLayout()
@@ -67,6 +69,9 @@ class VLayoutWidget(StyledWidget):
 	def addSpacing(self, s: int):
 		self._layout.addSpacing(s)
 
+	def addStretch(self):
+		self._layout.addStretch()
+
 class VGroupBox(QtWidgets.QGroupBox):
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
@@ -75,3 +80,6 @@ class VGroupBox(QtWidgets.QGroupBox):
 
 	def addWidget(self, w: QtWidgets.QWidget):
 		self._layout.addWidget(w)
+
+	def addSpacing(self, s: int):
+		self._layout.addSpacing(s)

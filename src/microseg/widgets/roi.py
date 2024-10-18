@@ -39,17 +39,17 @@ class LabeledROI:
     def __sub__(self, offset: np.ndarray):
         return LabeledROI(self.lbl, self.roi - offset)
     
-    def toItem(self, img_shape: Tuple[int, int]) -> 'LabeledROIItem':
+    def toItem(self, img_shape: Tuple[int, int], **kwargs) -> 'LabeledROIItem':
         '''
         Converts to item and appropriately transforms to pyqtgraph's orientation defaults
         '''
         self = self.toPyQTOrientation(img_shape)
         if type(self.roi) is PlanarPolygon:
-            return LabeledPolygonItem(self)
+            return LabeledPolygonItem(self, **kwargs)
         elif type(self.roi) is Ellipse:
-            return LabeledEllipseItem(self)
+            return LabeledEllipseItem(self, **kwargs)
         elif type(self.roi) is Circle:
-            return LabeledCircleItem(self)
+            return LabeledCircleItem(self, **kwargs)
         else:
             raise NotImplementedError
         
@@ -66,15 +66,29 @@ class LabeledROI:
         '''
         _, ylen = img_shape
         return self.flipy(ylen)
+    
+    def asPoly(self) -> PlanarPolygon:
+        if type(self.roi) is PlanarPolygon:
+            return self.roi
+        elif type(self.roi) is Ellipse:
+            return self.roi.discretize(50)
+        elif type(self.roi) is Circle:
+            return self.roi.discretize(50)
+        else:
+            raise NotImplementedError
+    
+    def intersects(self, other: 'LabeledROI') -> bool:
+        return self.asPoly().intersects(other.asPoly())
         
 '''
 ROI Items (for adding to Qt widgets)
 '''
 
 class LabeledROIItem:
-    def __init__(self, lroi: LabeledROI, selectable: bool=True, show_label: bool=True):
+    def __init__(self, lroi: LabeledROI, selectable: bool=True, show_label: bool=True, dashed: bool=False):
         self._lroi = lroi
         self._selected = False
+        self._dashed = dashed
         self._set_pens(show_label=show_label)
         if selectable:
             self._proxy = ClickProxy()
@@ -83,7 +97,7 @@ class LabeledROIItem:
 
     def _set_pens(self, show_label: bool=True):
         i = self._lroi.lbl % pg_colors.n_pens if show_label else 65
-        self._pen = pg_colors.cc_pens[i]
+        self._pen = pg_colors.cc_pens_dashed[i] if self._dashed else pg_colors.cc_pens[i]
         self._hpen = pg_colors.cc_pens_hover[i]
         self.setPen(self._pen)
 

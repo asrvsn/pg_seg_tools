@@ -53,10 +53,11 @@ class ROICreatorWidget(VLayoutWidget):
         self._poly_btn = QRadioButton('Polygon')
         self.addWidget(self._poly_btn)
         self._poly_wdg = VGroupBox()
-        self._chull_box = QCheckBox('Convex hull')
-        self._poly_wdg.addWidget(self._chull_box)
         self._simplify_sld = FloatSlider(label='Simplify:', step=0.001)
         self._poly_wdg.addWidget(self._simplify_sld)
+        self._poly_wdg.addSpacing(5)
+        self._chull_box = QCheckBox('Convex hull')
+        self._poly_wdg.addWidget(self._chull_box)
         self.addWidget(self._poly_wdg)
         self._ellipse_btn = QRadioButton('Ellipse')
         self.addWidget(self._ellipse_btn)
@@ -80,7 +81,7 @@ class ROICreatorWidget(VLayoutWidget):
         self._offset = np.array([0, 0])
         self._poly_btn.setChecked(True)
         self._chull_box.setChecked(False)
-        self._simplify_sld.setData(0., 0.01, 0.)
+        self._simplify_sld.setData(0., 0.02, 0.)
         self._scale_sld.setData(0.8, 1.2, 1.0)
 
         # Listeners
