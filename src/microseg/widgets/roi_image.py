@@ -59,9 +59,6 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
         self.setImage(img)
         self.setROIs(rois)
 
-    def setImage(self, img: np.ndarray):
-        self._img.setImage(img)
-
     def setROIs(self, rois: List[LabeledROI]):
         # Remove previous rois
         self._selected = set()

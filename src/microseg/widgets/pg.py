@@ -91,6 +91,9 @@ class ImagePlotWidget(NoTouchPlotWidget):
 
     def _shape(self) -> Tuple[int, int]:
         return self._img.image.shape[:2]
+    
+    def setImage(self, img: np.ndarray):
+        self._img.setImage(img)
 
 class MaskItem(ImageItem):
     '''

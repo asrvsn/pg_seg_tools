@@ -11,6 +11,7 @@ import cv2
 import pdb
 
 from matgeo import PlanarPolygon, Circle, Ellipse
+from microseg.widgets.pg import ImagePlotWidget
 from .base import *
 from .manual import ROICreatorWidget
 
@@ -99,7 +100,6 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
                 continue
             sr, sc = si
             i_mask = mask[sr, sc] == (i+1)
-            # pdb.set_trace()
             _, contours, __ = upolygon.find_contours(i_mask.astype(np.uint8))
             contours = [np.array(c).reshape(-1, 2) for c in contours] # Convert X, Y, X, Y,... to X, Y
             contour = max(contours, key=lambda c: cv2.contourArea(c)) # Find max-area contour
@@ -124,12 +124,18 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         self._update_cp_polys(self._img, self._poly)
         self._set_proposals(self._cp_polys)
 
-
 class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
     '''
     Segment a single object by zooming in 
     '''
     WIN_MULT: float=1.5
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._img_wdg = VGroupBox('Image settings')
+        self._main.insertWidget(0, self._img_wdg)
+        self._subimg_view = QImageWidget()
+        self._img_wdg.addWidget(self._subimg_view)
 
     def name(self) -> str:
         return 'Cellpose (single)'
@@ -142,11 +148,14 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
         xmax = min(img.shape[1], math.ceil(center[0] + radius))
         ymin = max(0, math.floor(center[1] - radius))
         ymax = min(img.shape[0], math.ceil(center[1] + radius))
-        img = img[ymin:ymax, xmin:xmax]
+        subimg = img[ymin:ymax, xmin:xmax]
+        ar = subimg.shape[0] / subimg.shape[1]
+        self._subimg_view.setFixedSize(210, round(210 * ar))
+        self._subimg_view.setImage(subimg)  
         # Compute cellpose on sub-img & translate back
         offset = np.array([xmin, ymin])
-        polys = super()._compute_cp_polys(img, poly - offset)
-        center_img = np.array(img.shape[:2]) / 2
+        polys = super()._compute_cp_polys(subimg, poly - offset)
+        center_img = np.array(subimg.shape[:2]) / 2
         if len(polys) > 0:
             poly = min(polys, key=lambda p: np.linalg.norm(p.centroid() - center_img))
             return [poly + offset]

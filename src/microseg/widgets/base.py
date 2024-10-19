@@ -6,11 +6,13 @@ import abc
 import os
 import pickle
 import math
+import numpy as np
 from qtpy import QtCore
 from qtpy import QtGui, QtWidgets
 from qtpy.QtCore import Qt, QTimer, QObject
 from qtpy.QtWidgets import QApplication, QFileSystemModel, QHeaderView, QLabel, QSizePolicy, QTableWidget, QTreeView, QVBoxLayout, QWidget, QGraphicsOpacityEffect, QSlider, QScrollBar, QAction, QMessageBox
 from qtpy.QtGui import QKeySequence, QShortcut
+from qtpy.QtGui import QImage, QPixmap
 from superqt import QRangeSlider
 
 from .layout import *
@@ -402,3 +404,20 @@ class IntegerRangeSlider(HLayoutWidget):
         self._slider.setMaximum(max)
         self._slider.setValue(range)
         self._label.setText(f'{x}-{y}/{max}')
+
+class QImageWidget(QLabel):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setScaledContents(True)
+        self.setAlignment(Qt.AlignCenter)
+
+    def setImage(self, img: np.ndarray):
+        img_bytes = img.data.tobytes()
+        h, w = img.shape[:2]
+        if img.ndim == 2:
+            qImage = QImage(img_bytes, w, h, QImage.Format_Grayscale8)
+        elif img.ndim == 3 and img.shape[2] == 3:
+            qImage = QImage(img_bytes, w, h, 3 * w, QImage.Format_RGB888)
+        else:
+            raise ValueError('Invalid image shape')
+        self.setPixmap(QPixmap.fromImage(qImage))

@@ -51,6 +51,9 @@ class HLayoutWidget(StyledWidget):
 	def addWidget(self, w: QtWidgets.QWidget):
 		self._layout.addWidget(w)
 
+	def insertWidget(self, i: int, w: QtWidgets.QWidget):
+		self._layout.insertWidget(i, w)
+
 	def addSpacing(self, s: int):
 		self._layout.addSpacing(s)
 
@@ -65,6 +68,9 @@ class VLayoutWidget(StyledWidget):
 
 	def addWidget(self, w: QtWidgets.QWidget):
 		self._layout.addWidget(w)
+
+	def insertWidget(self, i: int, w: QtWidgets.QWidget):
+		self._layout.insertWidget(i, w)
 
 	def addSpacing(self, s: int):
 		self._layout.addSpacing(s)
