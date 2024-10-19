@@ -365,10 +365,13 @@ class ROIsCreator(VLayoutWidget):
         '''
         assert not self._is_proposing
         img = self._get_img()
+        seg = self._segmentors[self._mode]
         if self._show_options:
-            self._segmentors[self._mode].prompt(img, poly)
+            # Spawn by default in upper-right
+            seg.move(self.width() - round(seg.width() * 1.25), round(seg.width() * 0.5))
+            seg.prompt(img, poly)
         else:
-            self._segmentors[self._mode].prompt_immediate(img, poly)
+            seg.prompt_immediate(img, poly)
 
     def _delete_from_child(self, indices: Set[int]):
         '''

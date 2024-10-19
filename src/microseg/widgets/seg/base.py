@@ -152,7 +152,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         roi_wdg.addWidget(self._roi_creator)
         self.addWidget(roi_wdg)
         self._bottom = HLayoutWidget()
-        self._ok_btn = QPushButton('OK')
+        self._ok_btn = QPushButton('Accept')
         self._bottom.addWidget(self._ok_btn)
         self._cancel_btn = QPushButton('Cancel')
         self._bottom.addWidget(self._cancel_btn)
