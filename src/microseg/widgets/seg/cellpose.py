@@ -12,6 +12,7 @@ import pdb
 
 from matgeo import PlanarPolygon, Circle, Ellipse
 from microseg.widgets.pg import ImagePlotWidget
+from microseg.utils.image import rescale_intensity
 from .base import *
 from .manual import ROICreatorWidget
 
@@ -124,6 +125,9 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         self._update_cp_polys(self._img, self._poly)
         self._set_proposals(self._cp_polys)
 
+def void(*args, **kwargs):
+    pass
+
 class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
     '''
     Segment a single object by zooming in 
@@ -136,11 +140,17 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
         self._main.insertWidget(0, self._img_wdg)
         self._subimg_view = QImageWidget()
         self._img_wdg.addWidget(self._subimg_view)
+        self._intens_box = QCheckBox('Rescale intensity')
+        self._img_wdg.addWidget(self._intens_box)
+
+        self._intens_box.setChecked(False)
+
+        self._intens_box.toggled.connect(lambda: void(self._render_img(self._img, self._poly)))
 
     def name(self) -> str:
         return 'Cellpose (single)'
     
-    def _compute_cp_polys(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
+    def _render_img(self, img: np.ndarray, poly: PlanarPolygon) -> Tuple[np.ndarray, np.ndarray]:
         center = poly.centroid()
         radius = np.linalg.norm(poly.vertices - center, axis=1).max() * self.WIN_MULT
         # Select image by center +- radius 
@@ -148,12 +158,20 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
         xmax = min(img.shape[1], math.ceil(center[0] + radius))
         ymin = max(0, math.floor(center[1] - radius))
         ymax = min(img.shape[0], math.ceil(center[1] + radius))
-        subimg = img[ymin:ymax, xmin:xmax]
+        subimg = img[ymin:ymax, xmin:xmax].copy()
+        # Postprocess image
+        if self._intens_box.isChecked():
+            subimg = rescale_intensity(subimg)
         ar = subimg.shape[0] / subimg.shape[1]
-        self._subimg_view.setFixedSize(210, round(210 * ar))
+        self._subimg_view.setFixedSize(220, round(220 * ar))
         self._subimg_view.setImage(subimg)  
-        # Compute cellpose on sub-img & translate back
+        # Calc offset
         offset = np.array([xmin, ymin])
+        return subimg, offset
+    
+    def _compute_cp_polys(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
+        subimg, offset = self._render_img(img, poly)
+        # Compute cellpose on sub-img & translate back
         polys = super()._compute_cp_polys(subimg, poly - offset)
         center_img = np.array(subimg.shape[:2]) / 2
         if len(polys) > 0:

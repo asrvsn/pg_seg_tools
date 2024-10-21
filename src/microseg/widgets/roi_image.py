@@ -5,12 +5,11 @@ Image + ROI overlays
 '''
 from typing import Set, Type
 from qtpy.QtWidgets import QRadioButton, QLabel, QCheckBox, QComboBox, QLabel
-import skimage 
-import skimage.exposure
 
 from .pg import *
 from .roi import *
 from .seg import *
+from microseg.utils.image import rescale_intensity
 
 class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
     '''
@@ -281,6 +280,8 @@ class ROIsCreator(VLayoutWidget):
             self._mode_drop.setCurrentIndex((self._mode_drop.currentIndex() + 1) % len(self._segmentors))
         elif evt.key() == Qt.Key_R:
             self._rois_box.setChecked(not self._rois_box.isChecked())
+        elif evt.key() == Qt.Key_I:
+            self._intens_btn.setChecked(not self._intens_btn.isChecked())
         else:
             super().keyPressEvent(evt)
 
@@ -345,15 +346,7 @@ class ROIsCreator(VLayoutWidget):
         else:
             img = self._img[:, :, self._chan]
         if self._intens_btn.isChecked():
-            i0, i1 = 2, 98
-            if img.ndim == 2:
-                rng = tuple(np.percentile(img, (i0, i1)))    
-                img = skimage.exposure.rescale_intensity(img, in_range=rng)
-            elif img.ndim == 3:
-                img = np.stack((
-                    skimage.exposure.rescale_intensity(img[:, :, c], in_range=tuple(np.percentile(img[:, :, c], (i0, i1))))
-                    for c in range(img.shape[2])
-                ), axis=-1)
+            img = rescale_intensity(img)
         return img
     
     def _redraw_img(self):
@@ -367,8 +360,7 @@ class ROIsCreator(VLayoutWidget):
         img = self._get_img()
         seg = self._segmentors[self._mode]
         if self._show_options:
-            # Spawn by default in upper-right
-            seg.move(self.width() - round(seg.width() * 1.25), round(seg.width() * 0.5))
+            seg.move(self.width() - round(seg.width() * 1.25), round(seg.width() * 0.5)) # Spawn by default in upper-right
             seg.prompt(img, poly)
         else:
             seg.prompt_immediate(img, poly)

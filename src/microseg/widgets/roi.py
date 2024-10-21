@@ -141,12 +141,11 @@ class LabeledEllipseItem(QGraphicsEllipseItem, LabeledROIItem):
     def __init__(self, lroi: LabeledROI, *args, **kwargs):
         # Both constructors get called automatically, so pass the named one explicitly
         super().__init__(*args, lroi=lroi, **kwargs)
-        P, rs = lroi.roi.get_axes_stretches()
+        _, rs = lroi.roi.get_axes_stretches()
         hr, vr = rs
         x, y = lroi.roi.v
         self.setRect(x-hr, y-vr, 2*hr, 2*vr)
-        P = P.T
-        theta = np.arctan2(P[1,0], P[0,0]) # Angle from orthogonal matrix P.T
+        theta = lroi.roi.get_rotation()
         self.setTransformOriginPoint(QtCore.QPointF(x, y)) # Transform about ellipse center
         self.setRotation(theta*180/np.pi) # Rotate onto basis P
 
