@@ -70,8 +70,8 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
     def reset_state(self):
         super().reset_state()
         self._cp_polys = None
-        # if hasattr(self, '_cp_cellprob_sld'):
-        #     self._cp_cellprob_sld.setValue(0.)
+        if hasattr(self, '_cp_cellprob_sld'):
+            self._cp_cellprob_sld.setValue(0.)
 
     ''' Private methods '''
 
@@ -143,7 +143,7 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
         self._intens_box = QCheckBox('Rescale intensity')
         self._img_wdg.addWidget(self._intens_box)
 
-        self._intens_box.setChecked(False)
+        self._intens_box.setChecked(True)
 
         self._intens_box.toggled.connect(lambda: void(self._render_img(self._img, self._poly)))
 

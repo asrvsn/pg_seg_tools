@@ -412,10 +412,16 @@ class QImageWidget(QLabel):
         self.setAlignment(Qt.AlignCenter)
 
     def setImage(self, img: np.ndarray):
+        if img.dtype == np.uint8:
+            pass
+        elif img.dtype == np.uint16:
+            img = (img / 256).astype(np.uint8)
+        else:
+            raise ValueError(f'Invalid image dtype: {img.dtype}')
         img_bytes = img.data.tobytes()
         h, w = img.shape[:2]
         if img.ndim == 2:
-            qImage = QImage(img_bytes, w, h, QImage.Format_Grayscale8)
+            qImage = QImage(img_bytes, w, h, w, QImage.Format_Grayscale8)
         elif img.ndim == 3 and img.shape[2] == 3:
             qImage = QImage(img_bytes, w, h, 3 * w, QImage.Format_RGB888)
         else:

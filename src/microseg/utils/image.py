@@ -25,6 +25,9 @@ def img_apply_affine(img: np.ndarray, aff: np.ndarray) -> Tuple[np.ndarray, np.n
     return img, aff
 
 def rescale_intensity(img: np.ndarray, i0=2, i1=98) -> np.ndarray:
+    '''
+    Autoscale intensity per channel
+    '''
     if img.ndim == 2:
         rng = tuple(np.percentile(img, (i0, i1)))    
         img = skimage.exposure.rescale_intensity(img, in_range=rng)

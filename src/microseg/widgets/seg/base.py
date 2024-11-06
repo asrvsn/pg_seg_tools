@@ -82,7 +82,7 @@ class ROICreatorWidget(VLayoutWidget):
         self._poly_btn.setChecked(True)
         self._chull_box.setChecked(False)
         self._simplify_sld.setData(0., 0.02, 0.)
-        self._scale_sld.setData(0.8, 1.2, 1.0)
+        self._scale_sld.setData(0.6, 1.4, 1.0)
 
         # Listeners
         for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn, self._chull_box]:
