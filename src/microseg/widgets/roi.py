@@ -10,8 +10,7 @@ import pyqtgraph as pg
 from abc import ABC, abstractmethod
 import pdb
 
-from matgeo.plane import PlanarPolygon
-from matgeo.ellipsoid import Circle, Ellipsoid, Ellipse
+from matgeo import PlanarPolygon, Circle, Ellipsoid, Ellipse
 
 from .base import *
 from microseg.utils import pg_colors

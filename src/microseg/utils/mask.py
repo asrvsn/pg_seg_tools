@@ -137,3 +137,12 @@ def draw_poly(mask: np.ndarray, poly: List[int], label: int) -> np.ndarray:
     Draw polygon on mask with coordinates given in [x,y,x,y...] format
     '''
     return upolygon.draw_polygon(mask, [poly], label)
+
+def draw_polygon(mask: np.ndarray, poly: PlanarPolygon) -> np.ndarray:
+    return draw_poly(mask, poly.vertices.flatten().tolist(), 1)
+
+def draw_outline(mask: np.ndarray, poly: PlanarPolygon) -> np.ndarray:
+    mask_ = draw_polygon(np.zeros_like(mask), poly)
+    mask_ = (mask_ - binary_erosion(mask_, iterations=1)).astype(bool)
+    mask[mask_] = 1
+    return mask

@@ -252,7 +252,7 @@ class ROIsCreator(VLayoutWidget):
         self._rois = []
         self._set_proposing(False)
         self._rois_box.setChecked(True)
-        self._rgb_box.setChecked(True)
+        self._rgb_box.setChecked(False)
         self._options_box.setChecked(True)
         self._chan_slider.setData(0, 255, 0)
         self._intens_btn.setChecked(False)
@@ -282,6 +282,8 @@ class ROIsCreator(VLayoutWidget):
             self._rois_box.setChecked(not self._rois_box.isChecked())
         elif evt.key() == Qt.Key_I:
             self._intens_btn.setChecked(not self._intens_btn.isChecked())
+        elif evt.key() == Qt.Key_C and self._chan_slider.isVisible():
+            self._chan_slider.setValue((self._chan_slider.value() + 1) % self._img.shape[2])
         else:
             super().keyPressEvent(evt)
 

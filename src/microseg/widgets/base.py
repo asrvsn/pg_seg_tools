@@ -330,11 +330,16 @@ class IntegerSlider(HLayoutWidget):
 
     def setData(self, min: int, max: int, x: int):
         assert min <= x <= max, 'x must be within min and max'
+        self._min = min
         self._max = max
         self._slider.setMinimum(min)
         self._slider.setMaximum(max)
+        self.setValue(x)
+
+    def setValue(self, x: int):
+        assert self._min <= x <= self._max, 'x must be within min and max'
         self._slider.setValue(x)
-        self._label.setText(f'{x}/{max}')
+        self._label.setText(f'{x}/{self._max}')
 
 class FloatSlider(HLayoutWidget):
     '''
@@ -416,6 +421,8 @@ class QImageWidget(QLabel):
             pass
         elif img.dtype == np.uint16:
             img = (img / 256).astype(np.uint8)
+        elif img.dtype == np.float64:
+            img = (img * 255).astype(np.uint8)
         else:
             raise ValueError(f'Invalid image dtype: {img.dtype}')
         img_bytes = img.data.tobytes()

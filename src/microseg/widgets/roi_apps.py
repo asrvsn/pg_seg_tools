@@ -73,15 +73,27 @@ class ImageSegmentorApp(SaveableApp):
             rois = rois[0]
         pickle.dump(rois, open(path, 'wb'))
 
+    def keyPressEvent(self, evt):
+        if evt.key() == Qt.Key_Left:
+            self._set_z(self._z-1, set_slider=True)
+        elif evt.key() == Qt.Key_Right:
+            self._set_z(self._z+1, set_slider=True)
+        else:
+            super().keyPressEvent(evt)
+
     ''' Private methods '''
 
     def _refresh_ROIs(self):
         self._creator.setROIs(self._rois[self._z])
 
-    def _set_z(self, z: int):
-        assert 0 <= z <= self._zmax-1, f'Invalid z: {z}'
-        self._z = z
-        self._creator.setData(self._img[z], self._rois[z])
+    def _set_z(self, z: int, set_slider: bool=False):
+        z = max(0, min(z, self._zmax-1))
+        if z != self._z:
+            if set_slider:
+                self._z_slider.setValue(z) # Callback will go to next branch
+            else:
+                self._z = z
+                self._creator.setData(self._img[z], self._rois[z])
 
     @property
     def next_label(self) -> int:
