@@ -11,6 +11,8 @@ from skimage.io import imread
 import pdb
 import pickle
 import sys
+import pymupdf
+import io
 
 def get_voxel_size(path: str) -> np.ndarray:
     '''
@@ -27,8 +29,7 @@ def load_XY_image(path: str, gray: bool=True, imscale: Optional[Tuple[float, flo
     '''
     assert os.path.exists(path), f'File not found: {path}'
     _, fext = os.path.splitext(path)
-    if fext in ['.png', '.jpg', '.jpeg', '.tif', '.tiff']:
-        im = Image.open(path)
+    def convert_PIL_to_numpy(im):
         if not imscale is None:
             # Rescale x/y axes 
             r1, r2 = round(im.size[0] * imscale[0]), round(im.size[1] * imscale[1])
@@ -36,7 +37,25 @@ def load_XY_image(path: str, gray: bool=True, imscale: Optional[Tuple[float, flo
             im = im.resize((r1, r2))
         if gray and im.mode in ['RGB', 'RGBA']:
             im = im.convert('L')
-        img = np.array(im)
+        return np.array(im)
+
+    if fext in ['.png', '.jpg', '.jpeg', '.tif', '.tiff']:
+        img = convert_PIL_to_numpy(Image.open(path))
+    elif fext in ['.pdf']:
+        # Extract first image from pdf
+        doc = pymupdf.open(path)
+        img = None
+        for page in doc:
+            imlist = page.get_images(full=True)
+            if imlist:
+                xref = imlist[0][0]
+                iminfo = doc.extract_image(xref)
+                imbytes = iminfo['image']
+                im = Image.open(io.BytesIO(imbytes))
+                img = convert_PIL_to_numpy(im)
+                break
+        if img is None:
+            raise ValueError(f'No image found in {path}')
     else:
         raise NotImplementedError(f'File type {fext} not supported')
     if gray:
@@ -84,7 +103,7 @@ def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None) -> np.nda
         # Reshape CXY to ZXYC
         img = np.array([img.transpose(1, 2, 0)])
         return img
-    elif fext in ['.jpg', '.jpeg', '.png']:
+    elif fext in ['.jpg', '.jpeg', '.png', '.pdf']:
         img = load_XY_image(path, imscale=imscale, gray=False)
         img = np.array([img])
     else:

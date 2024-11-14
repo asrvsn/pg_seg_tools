@@ -189,9 +189,9 @@ class ROIsCreator(VLayoutWidget):
     add = QtCore.Signal(object) # List[ROI]
     delete = QtCore.Signal(object) # Set[int], labels of deleted ROIs
     AVAIL_MODES: List[SegmentorWidget] = [
-        ManualSegmentorWidget,
-        CellposeMultiSegmentorWidget,
         CellposeSingleSegmentorWidget,
+        CellposeMultiSegmentorWidget,
+        ManualSegmentorWidget,
     ]
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

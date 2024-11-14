@@ -8,8 +8,7 @@ from qtpy import QtCore
 from qtpy.QtWidgets import QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsEllipseItem, QGraphicsItem
 import pyqtgraph as pg
 
-from matgeo.plane import PlanarPolygon
-from matgeo.ellipsoid import Sphere
+from matgeo import Sphere, PlanarPolygon
 
 from .base import *
 from microseg.utils import pg_colors

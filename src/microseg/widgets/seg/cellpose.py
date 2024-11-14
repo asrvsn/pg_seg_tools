@@ -20,6 +20,86 @@ import microseg.utils.mask as mutil
 from .base import *
 from .manual import ROICreatorWidget
 
+class ImageProcessingWidget(VLayoutWidget):
+    FILTERS = [
+        ('none', None),
+        ('tvb', skrest.denoise_tv_bregman),
+        ('bi', skrest.denoise_bilateral),
+        ('wvt', skrest.denoise_wavelet),
+    ]
+    processed = QtCore.Signal()
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Widgets
+        self._intens_box = QCheckBox('Rescale intensity')
+        self.addWidget(self._intens_box)
+        down_wdg = HLayoutWidget()
+        self._down_box = QCheckBox('Downscale to (px):')
+        down_wdg.addWidget(self._down_box)
+        down_wdg.addSpacing(10)
+        self._down_int = QSpinBox(minimum=100, maximum=10000)
+        down_wdg.addWidget(self._down_int)
+        self.addWidget(down_wdg)
+        self.addWidget(QLabel('Denoise:'))
+        self._filt_btns = []
+        for (name,_) in self.FILTERS:
+            btn = QRadioButton(name)
+            self.addWidget(btn)
+            self._filt_btns.append(btn)
+
+        # State
+        self._img = None
+        self._processed_img = None
+        self._down_box.setChecked(False)
+        self._down_int.setValue(400)
+        self._intens_box.setChecked(False)
+        self._filt_btns[0].setChecked(True)
+
+        # Listeners
+        for btn in self._filt_btns + [
+                self._down_box, self._intens_box,    
+            ]:
+            btn.toggled.connect(self._recalculate)
+        self._down_int.valueChanged.connect(self._recalculate)
+    
+    def _recalculate(self):
+        assert not self._img is None
+        img = self._img.copy()
+        ## Intensity
+        if self._intens_box.isChecked():
+            img = rescale_intensity(img)
+        ## Downsampling
+        if self._down_box.isChecked():
+            down_n = self._down_int.value()
+            if down_n < max(img.shape):
+                img = skimage.transform.rescale(img, self.scale, anti_aliasing=True)
+        ## Denoising
+        for i, btn in enumerate(self._filt_btns):
+            if btn.isChecked():
+                dn_fn = self.FILTERS[i][1]
+                if not dn_fn is None:
+                    dnkw = dict(channel_axis=-1) if img.ndim == 3 else {}
+                    img = skrest.denoise_invariant(img, dn_fn, denoiser_kwargs=dnkw)
+                break
+        ## Emit
+        self._processed_img = img
+        self.processed.emit()
+
+    ''' Public '''
+
+    @property
+    def scale(self) -> float:
+        return self._down_int.value() / max(self._img.shape) if self._down_box.isChecked() else 1
+    
+    @property
+    def processed_img(self) -> np.ndarray:
+        return self._processed_img
+    
+    def setImage(self, img: np.ndarray):
+        self._img = img
+        self._recalculate()
+
 class CellposeMultiSegmentorWidget(SegmentorWidget):
     USE_GPU: bool=False
     MODELS: List[str] = [
@@ -31,6 +111,11 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         super().__init__(*args, **kwargs)
 
         # Widgets
+        ## For image settings
+        self._img_wdg = VGroupBox('Image settings')
+        self._main.addWidget(self._img_wdg)
+        self._img_proc = ImageProcessingWidget()
+        self._img_wdg.addWidget(self._img_proc)
         ## For Cellpose settings
         self._cp_wdg = VGroupBox('Cellpose settings')
         self._main.addWidget(self._cp_wdg)
@@ -67,8 +152,10 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         Recomputes only the mask/poly post-processing step if no existing cellpose mask exists.
         Cellpose mask is re-computed only on explicit user request.
         '''
+        if self._img_proc.processed_img is None:
+            self._update_img(img, poly)
         if self._cp_polys is None:
-            self._update_cp_polys(img, poly)
+            self._update_cp_polys()
         return self._cp_polys
 
     def reset_state(self):
@@ -76,6 +163,12 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         self._cp_polys = None
         if hasattr(self, '_cp_cellprob_sld'):
             self._cp_cellprob_sld.setValue(0.)
+
+    def keyPressEvent(self, evt):
+        if evt.key() == QtCore.Qt.Key_Return and evt.modifiers() & Qt.ShiftModifier:
+            self._recompute()
+        else:
+            super().keyPressEvent(evt)
 
     ''' Private methods '''
 
@@ -88,8 +181,14 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
             gpu=self.USE_GPU
         )
 
-    def _compute_cp_polys(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
+    def _compute_cp_polys(self, img: np.ndarray, scale: float, poly: PlanarPolygon) -> List[PlanarPolygon]:
+        '''
+        Compute cellpose polygons using with possible downscaling
+        Returns polygons in the original (un-downscaled) coordinate system
+        '''
+        assert scale > 0
         # diam = poly.circular_radius() * 2
+        poly = poly.set_res(scale, scale)
         diam = poly.diameter()
         cellprob = self._cp_cellprob_sld.value()
         mask = self._cp_model.eval(
@@ -111,26 +210,32 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
             if contour.shape[0] < 3:
                 continue
             contour = contour + np.array([sc.start, sr.start])
-            poly = PlanarPolygon(contour)
-            cp_polys.append(poly)
+            try:
+                poly = PlanarPolygon(contour)
+                poly = poly.set_res(1/scale, 1/scale)
+                cp_polys.append(poly)
+            except:
+                pass
+        print(f'Found {len(cp_polys)} valid polygons')
         return cp_polys
 
-    def _update_cp_polys(self, img: np.ndarray, poly: PlanarPolygon):
+    def _update_img(self, img: np.ndarray, poly: PlanarPolygon):
+        self._img_proc.setImage(img)
+
+    def _update_cp_polys(self):
         '''
         Computes & sets cellpose mask
         '''
-        self._cp_polys = self._compute_cp_polys(img, poly)
+        assert not self._poly is None and not self._img_proc.processed_img is None
+        self._cp_polys = self._compute_cp_polys(self._img_proc.processed_img, self._img_proc.scale, self._poly)
     
     def _recompute(self):
         '''
         Recomputes entire thing
         '''
-        assert not self._poly is None and not self._img is None
-        self._update_cp_polys(self._img, self._poly)
+        self._update_cp_polys()
         self._set_proposals(self._cp_polys)
 
-def void(*args, **kwargs):
-    pass
 
 class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
     '''
@@ -140,99 +245,52 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._img_wdg = VGroupBox('Image settings')
-        self._main.insertWidget(0, self._img_wdg)
         self._subimg_view = QImageWidget()
-        self._img_wdg.addWidget(self._subimg_view)
+        self._main.insertWidget(0, self._subimg_view)
         self._drawing_box = QCheckBox('Show drawing')
-        self._img_wdg.addWidget(self._drawing_box)
-        down_wdg = HLayoutWidget()
-        self._down_box = QCheckBox('Downsample to:')
-        down_wdg.addWidget(self._down_box)
-        down_wdg.addSpacing(10)
-        self._down_int = QSpinBox(minimum=100, maximum=10000)
-        down_wdg.addWidget(self._down_int)
-        self._img_wdg.addWidget(down_wdg)
-        self._intens_box = QCheckBox('Rescale intensity')
-        self._img_wdg.addWidget(self._intens_box)
-        self._img_wdg.addSpacing(5)
-        self._img_wdg.addWidget(QLabel('Denoise:'))
-        dn_btns = HLayoutWidget()
-        self._dn_none_btn = QRadioButton('none')
-        self._dn_bi_btn = QRadioButton('bi')
-        self._dn_tvb_btn = QRadioButton('tvb')
-        self._dn_wvt_btn = QRadioButton('wvt')
-        for btn in (self._dn_none_btn, self._dn_bi_btn, self._dn_tvb_btn, self._dn_wvt_btn):
-            dn_btns.addWidget(btn)
-        self._img_wdg.addWidget(dn_btns)
+        self._main.insertWidget(1, self._drawing_box)
 
         # State
         self._drawing_box.setChecked(False)
-        self._down_box.setChecked(True)
-        self._down_int.setValue(400)
-        self._intens_box.setChecked(True)
-        self._dn_none_btn.setChecked(True)
 
-        self._drawing_box.toggled.connect(lambda: void(self._render_img(self._img, self._poly)))
-        self._down_box.toggled.connect(lambda: void(self._render_img(self._img, self._poly)))
-        self._down_int.valueChanged.connect(lambda: void(self._render_img(self._img, self._poly)))
-        self._intens_box.toggled.connect(lambda: void(self._render_img(self._img, self._poly)))
-        for btn in (self._dn_none_btn, self._dn_bi_btn, self._dn_tvb_btn, self._dn_wvt_btn):
-            btn.toggled.connect(lambda: void(self._render_img(self._img, self._poly)))
-
+        # Listeners
+        self._drawing_box.toggled.connect(lambda: self._render_img(self._poly))
+        self._img_proc.processed.connect(lambda: self._render_img(self._poly))
 
     def name(self) -> str:
         return 'Cellpose (single)'
     
-    def _render_img(self, img: np.ndarray, poly: PlanarPolygon) -> Tuple[np.ndarray, np.ndarray, float]:
-        center = poly.centroid()
+    def _update_img(self, img: np.ndarray, poly: PlanarPolygon):
+        center = poly.centroid() 
         radius = np.linalg.norm(poly.vertices - center, axis=1).max() * self.WIN_MULT
         # Select image by center +- radius 
         xmin = max(0, math.floor(center[0] - radius))
         xmax = min(img.shape[1], math.ceil(center[0] + radius))
         ymin = max(0, math.floor(center[1] - radius))
         ymax = min(img.shape[0], math.ceil(center[1] + radius))
+        # Store offset
+        self._offset = np.array([xmin, ymin])
+        self._center = np.array([xmax - xmin, ymax - ymin]) / 2
         subimg = img[ymin:ymax, xmin:xmax].copy()
-        offset = np.array([xmin, ymin])
-        # Postprocess image
-        ## Downsampling
-        scale = 1
-        if self._down_box.isChecked():
-            down_n = self._down_int.value()
-            if down_n < max(subimg.shape):
-                scale = down_n / max(subimg.shape)
-                subimg = skimage.transform.rescale(subimg, scale, anti_aliasing=True)
-        print(f'Subimage shape: {subimg.shape}')
-        ## Intensity
-        if self._intens_box.isChecked():
-            subimg = rescale_intensity(subimg)
-        ## Denoising
-        if self._dn_none_btn.isChecked():
-            dn_fn = None
-        elif self._dn_bi_btn.isChecked():
-            dn_fn = skrest.denoise_bilateral
-        elif self._dn_tvb_btn.isChecked():
-            dn_fn = skrest.denoise_tv_bregman
-        elif self._dn_wvt_btn.isChecked():
-            dn_fn = skrest.denoise_wavelet
-        if not dn_fn is None:
-            subimg = skrest.denoise_invariant(subimg, dn_fn)
-            # subimg = skimage.img_as_uint(subimg)
+        super()._update_img(subimg, poly)
+        self._render_img(poly)
+    
+    def _render_img(self, poly: PlanarPolygon):
+        subimg = self._img_proc.processed_img.copy()
+        scale = self._img_proc.scale
+        offset = self._offset
+        # Render
         ar = subimg.shape[0] / subimg.shape[1]
         self._subimg_view.setFixedSize(220, round(220 * ar))
-        rendering = subimg.copy()
         if self._drawing_box.isChecked():
-            rendering = mutil.draw_outline(rendering, (poly - offset).set_res(scale, scale))
-        self._subimg_view.setImage(rendering)  
-        return subimg, offset, scale
+            subimg = mutil.draw_outline(subimg, (poly - offset).set_res(scale, scale))
+        self._subimg_view.setImage(subimg)  
     
-    def _compute_cp_polys(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
-        subimg, offset, scale = self._render_img(img, poly)
+    def _compute_cp_polys(self, subimg: np.ndarray, scale: float, poly: PlanarPolygon) -> List[PlanarPolygon]:
         # Compute cellpose on sub-img & translate back
-        polys = super()._compute_cp_polys(subimg, (poly - offset).set_res(scale, scale))
-        center_img = np.array(subimg.shape[:2]) / 2
+        polys = super()._compute_cp_polys(subimg, scale, poly - self._offset)
         if len(polys) > 0:
-            poly = min(polys, key=lambda p: np.linalg.norm(p.centroid() - center_img))
-            return [poly.set_res(1/scale, 1/scale) + offset]
+            poly = min(polys, key=lambda p: np.linalg.norm(p.centroid() - self._center))
+            return [poly + self._offset]
         else:
             return []

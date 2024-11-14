@@ -38,6 +38,9 @@ class LabeledROI:
     def __sub__(self, offset: np.ndarray):
         return LabeledROI(self.lbl, self.roi - offset)
     
+    def __mul__(self, scale: float):
+        return LabeledROI(self.lbl, self.roi * scale)
+    
     def toItem(self, img_shape: Tuple[int, int], **kwargs) -> 'LabeledROIItem':
         '''
         Converts to item and appropriately transforms to pyqtgraph's orientation defaults
@@ -74,7 +77,8 @@ class LabeledROI:
         elif type(self.roi) is Circle:
             return self.roi.discretize(50)
         else:
-            raise NotImplementedError
+            # raise NotImplementedError(f'Invalid ROI type {type(self.roi)}')
+            return self.roi
     
     def intersects(self, other: 'LabeledROI') -> bool:
         return self.asPoly().intersects(other.asPoly())
