@@ -187,8 +187,8 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         Returns polygons in the original (un-downscaled) coordinate system
         '''
         assert scale > 0
-        # diam = poly.circular_radius() * 2
         poly = poly.set_res(scale, scale)
+        # diam = poly.circular_radius() * 2
         diam = poly.diameter()
         cellprob = self._cp_cellprob_sld.value()
         mask = self._cp_model.eval(
