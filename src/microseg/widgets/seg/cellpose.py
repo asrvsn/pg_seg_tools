@@ -152,10 +152,8 @@ class CellposeMultiSegmentorWidget(SegmentorWidget):
         Recomputes only the mask/poly post-processing step if no existing cellpose mask exists.
         Cellpose mask is re-computed only on explicit user request.
         '''
-        if self._img_proc.processed_img is None:
-            self._update_img(img, poly)
-        if self._cp_polys is None:
-            self._update_cp_polys()
+        self._update_img(img, poly)
+        self._update_cp_polys()
         return self._cp_polys
 
     def reset_state(self):
