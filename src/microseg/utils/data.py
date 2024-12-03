@@ -103,11 +103,9 @@ def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None) -> np.nda
         # Reshape CXY to ZXYC
         img = np.array([img.transpose(1, 2, 0)])
         return img
-    elif fext in ['.jpg', '.jpeg', '.png', '.pdf']:
+    else:
         img = load_XY_image(path, imscale=imscale, gray=False)
         img = np.array([img])
-    else:
-        raise NotImplementedError(f'File type {fext} not supported')
     # data = itk.array_view_from_image(itk.imread(args.data))
     assert img.ndim == 4, f'Expected 4d image, got {img.ndim}d image'
     return img
