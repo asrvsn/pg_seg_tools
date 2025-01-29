@@ -1,6 +1,7 @@
 '''
 Base classes for building apps from ROI editors
 '''
+from typing import Dict
 import pyqtgraph.opengl as gl # Has to be imported before qtpy
 from matgeo import Triangulation
 
@@ -41,6 +42,7 @@ class ImageSegmentorApp(SaveableApp):
         self._z_slider.valueChanged.connect(lambda z: self._set_z(z))
 
         # Run data load and rest of initialization in superclass
+        self._pre_super_init() # TODO: so ugly
         super().__init__(
             f'Segmenting {desc} on image: {os.path.basename(img_path)}',
             f'{os.path.splitext(img_path)[0]}.{desc}',
@@ -87,6 +89,9 @@ class ImageSegmentorApp(SaveableApp):
 
     ''' Private methods '''
 
+    def _pre_super_init(self):
+        pass
+
     def _refresh_ROIs(self):
         self._creator.setROIs(self._rois[self._z])
 
@@ -130,14 +135,10 @@ class ZStackObjectViewer(gl.GLViewWidget):
     3D viewer of multiple objects with current z-plane rendered
     '''
     mesh_opts: dict = {
-        'shader': 'normalColor',
+        # 'shader': 'normalColor',
         'glOptions': 'opaque',
-        'drawEdges': True,
+        'drawEdges': False,
         'smooth': False,
-    }
-    grid_opts: dict = {
-        # 'glOptions': 'translucent',
-        # 'color': (0.5, 0.5, 0.5, 1.0),
     }
     cursor_opts: dict = {
         'pxMode': True,
@@ -146,24 +147,26 @@ class ZStackObjectViewer(gl.GLViewWidget):
     }
     facecolors = cc_glasbey_01_rgba
 
-    def __init__(self, shape_x: float, shape_y: float, *args, **kwargs): 
+    def __init__(self, volsize: np.ndarray, *args, **kwargs): 
         super().__init__(*args, **kwargs)
         self.setWindowTitle('Z-Slice Object Viewer')
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         MainWindow.resizeToScreen(self, offset=1) # Show on next avail screen
-        self.setCameraPosition(distance=max(shape_x, shape_y)*1.5) # Zoom out sufficiently
-        self._plane = GLPlaneItem(shape_x, shape_y)
+        self.opts['center'] = pg.Vector(*(volsize/2))
+        self.setCameraPosition(distance=volsize.max() * 1.5) # Zoom out sufficiently
+        self._plane = GLPlaneItem(volsize[0], volsize[1])
         self.addItem(self._plane)
         self._cursor_pt = gl.GLScatterPlotItem(**self.cursor_opts)
         self.addItem(self._cursor_pt)
         self._meshes = []
 
-    def setObjects(self, objs: List[Triangulation], labels: List[int]):
+    def setObjects(self, objs: Dict[int, Triangulation]):
         for mesh in self._meshes:
             self.removeItem(mesh)
         self._meshes = []
-        for obj, lbl in zip(objs, labels):
-            colors = np.full((len(obj.simplices), 4), self.facecolors[lbl])
+        nfc = len(self.facecolors)
+        for lbl, obj in objs.items():
+            colors = np.full((len(obj.simplices), 4), self.facecolors[lbl % nfc])
             md = gl.MeshData(vertexes=obj.pts, faces=obj.simplices, faceColors=colors)
             mesh = gl.GLMeshItem(meshdata=md, **self.mesh_opts)
             self.addItem(mesh)
@@ -200,13 +203,14 @@ class ZStackSegmentorApp(ImageSegmentorApp):
         b. Render current z-plane in view
         c. Render position of cursor in z-plane (might need to bubble up from lower level)
     '''
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    # TODO: better approach than overriding private
+    def _pre_super_init(self):
         self._voxsize = get_voxel_size(self._img_path, fmt='XYZ') # Physical voxel sizes
-        shape_x, shape_y = self._voxsize[:2] * np.array(self._img.shape[1:3])
-        self._viewer = ZStackObjectViewer(shape_x, shape_y)
+        self._volsize = self._voxsize * np.array([self._img.shape[1], self._img.shape[2], self._img.shape[0]])
+        self._viewer = ZStackObjectViewer(self._volsize)
         self._viewer.show()
 
+    # TODO: better approach than overriding private
     def _set_z_raw(self, z: int):
         super()._set_z_raw(z)
         self._viewer.setZ(z * self._voxsize[2])
@@ -215,3 +219,23 @@ class ZStackSegmentorApp(ImageSegmentorApp):
         if not self._viewer is None:
             self._viewer.close() 
         evt.accept()
+
+    # TODO: better approach than overriding private
+    def _refresh_ROIs(self):
+        super()._refresh_ROIs()
+        # Compute 3d objects from 2d ROIs associated by their labels
+        objs = dict()
+        for z_i, level in enumerate(self._rois):
+            for roi in level:
+                verts = roi.asPoly().vertices
+                verts = np.hstack((verts, np.full((verts.shape[0], 1), z_i))) * self._voxsize
+                if roi.lbl in objs:
+                    objs[roi.lbl].append(verts)
+                else:
+                    objs[roi.lbl] = [verts]
+        # Triangulate the objects
+        for lbl, verts in objs.items():
+            objs[lbl] = Triangulation.surface_3d(
+                np.concatenate(verts), method='advancing_front'
+            )
+        self._viewer.setObjects(objs)

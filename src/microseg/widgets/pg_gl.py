@@ -53,12 +53,11 @@ class GLPlaneItem(gl.GLMeshItem):
 
     def _create_plane_mesh(self):
         """Create a quadrilateral plane from two triangles."""
-        x_half, y_half = self.x_size / 2, self.y_size / 2
         vertices = np.array([
-            [-x_half, -y_half, self.z_pos],  # Bottom-left
-            [x_half, -y_half, self.z_pos],   # Bottom-right
-            [x_half, y_half, self.z_pos],    # Top-right
-            [-x_half, y_half, self.z_pos]    # Top-left
+            [0, 0, self.z_pos],           # Bottom-left (origin)
+            [self.x_size, 0, self.z_pos],  # Bottom-right
+            [self.x_size, self.y_size, self.z_pos],  # Top-right
+            [0, self.y_size, self.z_pos]   # Top-left
         ])
         faces = np.array([[0, 1, 2], [0, 2, 3]])
         colors = np.full((2, 4), self.color)
