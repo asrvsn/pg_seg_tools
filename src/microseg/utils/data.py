@@ -6,6 +6,7 @@ import numpy as np
 import os
 from aicsimageio import AICSImage
 from PIL import Image
+import tifffile
 from typing import Tuple, Optional
 from skimage.io import imread
 import pdb
@@ -62,21 +63,32 @@ def load_XY_image(path: str, gray: bool=True, imscale: Optional[Tuple[float, flo
         assert img.ndim == 2, f'Expected 2d image, got {img.ndim}d image'
     return img
 
-def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None) -> np.ndarray:
+def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None, fmt_str='zxyc') -> np.ndarray:
     '''
     Return data in ZXYC format
     imscale: optional rescaling factor for slices
     '''
     assert os.path.exists(path), f'File not found: {path}'
+    fmt_str = fmt_str.lower()
     _, fext = os.path.splitext(path)
     if fext == '.czi':
         img = AICSImage(path).get_image_data('ZXYC') # ?
         assert imscale is None, 'Rescaling not supported for CZI files yet'
     elif fext in ['.tif', '.tiff']:
+        # Read tiff data
         img = imread(path)
-        if img.ndim == 3:
-            assert img.shape[2] < img.shape[0], f'Expected XYC image, got too many channels: {img.shape}'
-            img = np.array([img])
+        # Rectify shape based on available metadata
+        if img.ndim < 4:
+            with tifffile.TiffFile(path) as tif:
+                if tif.is_imagej:
+                    if not ('channels' in tif.imagej_metadata):
+                        img = img[:, :, :, np.newaxis] # Image is ZXY
+                    elif not ('slices' in tif.imagej_metadata):
+                        img = np.array([img]) # Image is XYC
+                    else:
+                        raise ValueError('Image is <4D yet has both slices and channels, I dont get it.')
+                else:
+                    raise NotImplementedError('Cant read metadata from non-ImageJ tiff files yet')
         if not imscale is None:
             # Resize each slice (now in ZXYC)
             r1, r2 = round(img.shape[1] * imscale[0]), round(img.shape[2] * imscale[1])

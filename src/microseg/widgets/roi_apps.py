@@ -9,11 +9,11 @@ class ImageSegmentorApp(SaveableApp):
     '''
     Simple usable app for segmenting single (or stacks) of images in ZXYC format
     '''
-    def __init__(self, img_path: str, desc: str='rois', *args, **kwargs):
+    def __init__(self, img_path: str, desc: str='rois', fmt_str='zxyc', *args, **kwargs):
         # State
         self._z = 0
         self._img_path = img_path
-        self._img = load_stack(img_path) # ZXYC
+        self._img = load_stack(img_path, fmt_str=fmt_str) # ZXYC
         self._zmax = self._img.shape[0]
         self._rois = [[] for _ in range(self._zmax)]
         

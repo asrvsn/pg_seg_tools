@@ -292,3 +292,6 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
             return [poly + self._offset]
         else:
             return []
+        
+## TODO: add spectral clustering for single-segment
+## https://scikit-learn.org/dev/auto_examples/cluster/plot_segmentation_toy.html
