@@ -63,17 +63,20 @@ def load_XY_image(path: str, gray: bool=True, imscale: Optional[Tuple[float, flo
         assert img.ndim == 2, f'Expected 2d image, got {img.ndim}d image'
     return img
 
-def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None, fmt_str='zxyc') -> np.ndarray:
+def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None, fmt_str='ZXYC') -> np.ndarray:
     '''
     Return data in ZXYC format
     imscale: optional rescaling factor for slices
     '''
     assert os.path.exists(path), f'File not found: {path}'
-    fmt_str = fmt_str.lower()
+    fmt_str = fmt_str.upper()
+    assert len(fmt_str) == 4 and set(fmt_str) == {'Z', 'X', 'Y', 'C'}, 'fmt_str must be permutation of ZXYC'
+    is_formatted = False
     _, fext = os.path.splitext(path)
     if fext == '.czi':
-        img = AICSImage(path).get_image_data('ZXYC') # ?
+        img = AICSImage(path).get_image_data(fmt_str)
         assert imscale is None, 'Rescaling not supported for CZI files yet'
+        is_formatted = True # Format achieved by AICSImage call
     elif fext in ['.tif', '.tiff']:
         # Read tiff data
         img = imread(path)
@@ -120,4 +123,6 @@ def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None, fmt_str='
         img = np.array([img])
     # data = itk.array_view_from_image(itk.imread(args.data))
     assert img.ndim == 4, f'Expected 4d image, got {img.ndim}d image'
+    if not is_formatted and fmt_str != 'ZXYC':
+        img = img.transpose(*['ZXYC'.index(ax) for ax in fmt_str])
     return img

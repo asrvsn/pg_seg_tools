@@ -220,6 +220,11 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         self._img = img
         self._poly = poly
         self.show()
+        # Spawn in relevant location
+        screen = self.screen()
+        if not screen is None:
+            # Align to top right
+            self.move(screen.geometry().right() - self.width(), screen.geometry().top())
         self._set_proposals(self.make_proposals(self._img, self._poly))
 
     def prompt_immediate(self, img: np.ndarray, poly: PlanarPolygon):

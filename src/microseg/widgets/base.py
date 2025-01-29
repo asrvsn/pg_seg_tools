@@ -11,7 +11,7 @@ from qtpy import QtCore
 from qtpy import QtGui, QtWidgets
 from qtpy.QtCore import Qt, QTimer, QObject
 from qtpy.QtWidgets import QApplication, QFileSystemModel, QHeaderView, QLabel, QSizePolicy, QTableWidget, QTreeView, QVBoxLayout, QWidget, QGraphicsOpacityEffect, QSlider, QScrollBar, QAction, QMessageBox
-from qtpy.QtGui import QKeySequence, QShortcut
+from qtpy.QtGui import QKeySequence, QShortcut, QGuiApplication, QCursor
 from qtpy.QtGui import QImage, QPixmap
 from superqt import QRangeSlider
 
@@ -97,9 +97,14 @@ class MainWindow(QtWidgets.QMainWindow):
         # pg.setConfigOptions(antialias=True, useOpenGL=False)
         
     def resizeToActiveScreen(self):
-        screen = QApplication.primaryScreen()
-        self.move(screen.geometry().center())
-        self.resize(screen.size())
+        # Find the screen where the cursor is currently located
+        screen = QGuiApplication.screenAt(QCursor.pos())
+        if screen is None:
+            # Fallback to primary screen if no screen is detected
+            screen = QApplication.primaryScreen()
+        # Move and resize the window to fit the active screen
+        self.move(screen.geometry().topLeft())
+        self.resize(screen.geometry().width(), screen.geometry().height())
 
 class SaveableApp(MainWindow, metaclass=QtABCMeta):
     '''

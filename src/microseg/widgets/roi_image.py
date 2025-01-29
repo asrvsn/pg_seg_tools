@@ -180,7 +180,7 @@ class ROIsImageWidget(ImagePlotWidget, metaclass=QtABCMeta):
 
 class ROIsCreator(VLayoutWidget):
     '''
-    Thin wrapper around ROIsImageWidget for creating ROIs with several options
+    Parent container for ROIsImageWidget for creating ROIs with several options
     - mode selector
     - show options 
     - channel selector for image
@@ -362,7 +362,6 @@ class ROIsCreator(VLayoutWidget):
         img = self._get_img()
         seg = self._segmentors[self._mode]
         if self._show_options:
-            seg.move(self.width() - round(seg.width() * 1.25), round(seg.width() * 0.5)) # Spawn by default in upper-right
             seg.prompt(img, poly)
         else:
             seg.prompt_immediate(img, poly)

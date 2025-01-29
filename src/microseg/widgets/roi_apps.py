@@ -9,11 +9,11 @@ class ImageSegmentorApp(SaveableApp):
     '''
     Simple usable app for segmenting single (or stacks) of images in ZXYC format
     '''
-    def __init__(self, img_path: str, desc: str='rois', fmt_str='zxyc', *args, **kwargs):
+    def __init__(self, img_path: str, desc: str='rois', *args, **kwargs):
         # State
         self._z = 0
         self._img_path = img_path
-        self._img = load_stack(img_path, fmt_str=fmt_str) # ZXYC
+        self._img = load_stack(img_path, fmt_str='ZXYC')
         self._zmax = self._img.shape[0]
         self._rois = [[] for _ in range(self._zmax)]
         
@@ -116,3 +116,21 @@ class ImageSegmentorApp(SaveableApp):
         ]
         self._refresh_ROIs()
         self.pushEdit()
+
+class StructureSegmentationApp(ImageSegmentorApp):
+    '''
+    Segment 3-dimensional structures using iterated 2-dimensional segmentation and fusion/registration
+    TODO:
+    1. Add an auxiliary window which shows the current 3D structure alone
+    2. Add a registration step between successive slices which allows:
+        a. Manual association of ROIs to the same label
+        b. Automated associations of ROIs
+        c. Both in a kind of "proposer" mode as in the 2D case
+        d. Proposer mode disables edits at the 2D level, but bubbles up selections to 3D for association
+        e. Re-label ROIs when associated to min label
+    3. Upon registration, re-compute and show the 3D structure
+        a. Recompute the 3D structure using a variety of options, e.g. convex hull, advancing front, etc from Triangulation lib
+        b. Render current z-plane in view
+        c. Render position of cursor in z-plane (might need to bubble up from lower level)
+    '''
+    pass
