@@ -93,18 +93,19 @@ class PushButton(QtWidgets.QPushButton):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.resizeToActiveScreen()
+        self.resizeToScreen()
         # pg.setConfigOptions(antialias=True, useOpenGL=False)
         
-    def resizeToActiveScreen(self):
-        # Find the screen where the cursor is currently located
-        screen = QGuiApplication.screenAt(QCursor.pos())
-        if screen is None:
+    def resizeToScreen(self, offset=0):
+        screens = QApplication.instance().screens()
+        cursor_screen = QGuiApplication.screenAt(QCursor.pos())
+        target_screen = screens[(screens.index(cursor_screen) + offset) % len(screens)]
+        if target_screen is None:
             # Fallback to primary screen if no screen is detected
-            screen = QApplication.primaryScreen()
+            target_screen = QApplication.primaryScreen()
         # Move and resize the window to fit the active screen
-        self.move(screen.geometry().topLeft())
-        self.resize(screen.geometry().width(), screen.geometry().height())
+        self.move(target_screen.geometry().topLeft())
+        self.resize(target_screen.geometry().width(), target_screen.geometry().height())
 
 class SaveableApp(MainWindow, metaclass=QtABCMeta):
     '''

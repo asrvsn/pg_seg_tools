@@ -1,9 +1,13 @@
 '''
 Base classes for building apps from ROI editors
 '''
+import pyqtgraph.opengl as gl # Has to be imported before qtpy
+from matgeo import Triangulation
+
 from .base import *
 from .pg import *
 from .roi_image import *
+from .pg_gl import *
 
 class ImageSegmentorApp(SaveableApp):
     '''
@@ -13,7 +17,7 @@ class ImageSegmentorApp(SaveableApp):
         # State
         self._z = 0
         self._img_path = img_path
-        self._img = load_stack(img_path, fmt_str='ZXYC')
+        self._img = load_stack(img_path, fmt='ZXYC')
         self._zmax = self._img.shape[0]
         self._rois = [[] for _ in range(self._zmax)]
         
@@ -92,8 +96,12 @@ class ImageSegmentorApp(SaveableApp):
             if set_slider:
                 self._z_slider.setValue(z) # Callback will go to next branch
             else:
-                self._z = z
-                self._creator.setData(self._img[z], self._rois[z])
+                self._set_z_raw(z)
+
+    def _set_z_raw(self, z: int):
+        # Hook-in for children
+        self._z = z
+        self._creator.setData(self._img[z], self._rois[z])
 
     @property
     def next_label(self) -> int:
@@ -117,7 +125,65 @@ class ImageSegmentorApp(SaveableApp):
         self._refresh_ROIs()
         self.pushEdit()
 
-class StructureSegmentationApp(ImageSegmentorApp):
+class ZStackObjectViewer(gl.GLViewWidget):
+    '''
+    3D viewer of multiple objects with current z-plane rendered
+    '''
+    mesh_opts: dict = {
+        'shader': 'normalColor',
+        'glOptions': 'opaque',
+        'drawEdges': True,
+        'smooth': False,
+    }
+    grid_opts: dict = {
+        # 'glOptions': 'translucent',
+        # 'color': (0.5, 0.5, 0.5, 1.0),
+    }
+    cursor_opts: dict = {
+        'pxMode': True,
+        'color': (1.0, 1.0, 1.0, 1.0),
+        'size': 10,
+    }
+    facecolors = cc_glasbey_01_rgba
+
+    def __init__(self, shape_x: float, shape_y: float, *args, **kwargs): 
+        super().__init__(*args, **kwargs)
+        self.setWindowTitle('Z-Slice Object Viewer')
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        MainWindow.resizeToScreen(self, offset=1) # Show on next avail screen
+        self.setCameraPosition(distance=max(shape_x, shape_y)*1.5) # Zoom out sufficiently
+        self._plane = GLPlaneItem(shape_x, shape_y)
+        self.addItem(self._plane)
+        self._cursor_pt = gl.GLScatterPlotItem(**self.cursor_opts)
+        self.addItem(self._cursor_pt)
+        self._meshes = []
+
+    def setObjects(self, objs: List[Triangulation], labels: List[int]):
+        for mesh in self._meshes:
+            self.removeItem(mesh)
+        self._meshes = []
+        for obj, lbl in zip(objs, labels):
+            colors = np.full((len(obj.simplices), 4), self.facecolors[lbl])
+            md = gl.MeshData(vertexes=obj.pts, faces=obj.simplices, faceColors=colors)
+            mesh = gl.GLMeshItem(meshdata=md, **self.mesh_opts)
+            self.addItem(mesh)
+            self._meshes.append(mesh)
+
+    def setZ(self, z: float):
+        self._plane.setZ(z)
+
+    def setXY(self, xy: Tuple[int, int]):
+        self._cursor_xy = xy
+        self._cursor_pt.setData(pos=[xy])
+
+    def closeEvent(self, evt):
+        for widget in QApplication.instance().topLevelWidgets(): # Intercept the close evt and close the main application.
+            if isinstance(widget, ZStackSegmentorApp):  
+                widget.close()
+                break  # Close only the first detected instance
+        evt.accept()  
+
+class ZStackSegmentorApp(ImageSegmentorApp):
     '''
     Segment 3-dimensional structures using iterated 2-dimensional segmentation and fusion/registration
     TODO:
@@ -130,7 +196,22 @@ class StructureSegmentationApp(ImageSegmentorApp):
         e. Re-label ROIs when associated to min label
     3. Upon registration, re-compute and show the 3D structure
         a. Recompute the 3D structure using a variety of options, e.g. convex hull, advancing front, etc from Triangulation lib
+            - make sure to use correct z-position using image metadata (voxel aspect ratio)
         b. Render current z-plane in view
         c. Render position of cursor in z-plane (might need to bubble up from lower level)
     '''
-    pass
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._voxsize = get_voxel_size(self._img_path, fmt='XYZ') # Physical voxel sizes
+        shape_x, shape_y = self._voxsize[:2] * np.array(self._img.shape[1:3])
+        self._viewer = ZStackObjectViewer(shape_x, shape_y)
+        self._viewer.show()
+
+    def _set_z_raw(self, z: int):
+        super()._set_z_raw(z)
+        self._viewer.setZ(z * self._voxsize[2])
+
+    def closeEvent(self, evt):
+        if not self._viewer is None:
+            self._viewer.close() 
+        evt.accept()

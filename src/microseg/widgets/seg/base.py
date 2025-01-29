@@ -219,8 +219,8 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         '''
         self._img = img
         self._poly = poly
-        self.show()
         # Spawn in relevant location
+        self.show()
         screen = self.screen()
         if not screen is None:
             # Align to top right

@@ -27,6 +27,49 @@ class GrabbableGLViewWidget(gl.GLViewWidget):
         else:
             super().keyPressEvent(ev)
 
+class GLPlaneItem(gl.GLMeshItem):
+    """ 
+    A 3D XY-plane rendered at a specific Z position in a PyQtGraph OpenGL view.
+    It is created as a quadrilateral (two triangles) and can be moved dynamically.
+    """
+    def __init__(self, x_size, y_size, z_pos=0, color=(1, 1, 1, 0.3), draw_edges=False):
+        """
+        Initializes the plane.
+
+        Parameters:
+        - x_size (float): Width of the plane in the X direction.
+        - y_size (float): Height of the plane in the Y direction.
+        - z_pos (float): Z position where the plane should be placed.
+        - color (tuple): RGBA color of the plane.
+        - draw_edges (bool): Whether to draw edges around the plane.
+        """
+        self.x_size = x_size
+        self.y_size = y_size
+        self.z_pos = z_pos
+        self.color = color
+        self.draw_edges = draw_edges
+        meshdata = self._create_plane_mesh()
+        super().__init__(meshdata=meshdata, smooth=False, drawEdges=draw_edges, glOptions='translucent')
+
+    def _create_plane_mesh(self):
+        """Create a quadrilateral plane from two triangles."""
+        x_half, y_half = self.x_size / 2, self.y_size / 2
+        vertices = np.array([
+            [-x_half, -y_half, self.z_pos],  # Bottom-left
+            [x_half, -y_half, self.z_pos],   # Bottom-right
+            [x_half, y_half, self.z_pos],    # Top-right
+            [-x_half, y_half, self.z_pos]    # Top-left
+        ])
+        faces = np.array([[0, 1, 2], [0, 2, 3]])
+        colors = np.full((2, 4), self.color)
+        return gl.MeshData(vertexes=vertices, faces=faces, faceColors=colors)
+
+    def setZ(self, z_new):
+        """Update the Z position of the plane."""
+        self.z_pos = z_new
+        self.resetTransform()  
+        self.translate(0, 0, z_new)  
+
 class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
     '''
     GLView + Triangulation with hoverable 3D points using raycasting

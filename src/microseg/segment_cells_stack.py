@@ -132,7 +132,7 @@ class CellSegmentorWindow(MainWindow):
         assert ZXY.ndim == 3, f'{path} is not a 3D image'
         assert ZXY.shape[1] == ZXY.shape[2], f'{path} is not a square ZXY image'
         print(f'Opening file of shape: {ZXY.shape}')
-        self._voxres = get_voxel_size(path)[::-1]
+        self._voxres = get_voxel_size(path, fmt='XYZ')
         print(f'Physical pixel sizes (x,y,z): {self._voxres}')
 
         circles = None
