@@ -147,33 +147,62 @@ class ZStackObjectViewer(gl.GLViewWidget):
     }
     facecolors = cc_glasbey_01_rgba
 
-    def __init__(self, volsize: np.ndarray, *args, **kwargs): 
+    def __init__(self, imgsize: np.ndarray, voxsize: np.ndarray, *args, **kwargs): 
         super().__init__(*args, **kwargs)
+        self._imgsize = imgsize # XYZ
+        self._voxsize = voxsize # XYZ
+        self._z_aniso = -voxsize[2] / voxsize[0] # Rendered in space where XY are unit-size pixels, scale z accordingly
         self.setWindowTitle('Z-Slice Object Viewer')
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         MainWindow.resizeToScreen(self, offset=1) # Show on next avail screen
-        self.opts['center'] = pg.Vector(*(volsize/2))
-        self.setCameraPosition(distance=volsize.max() * 1.5) # Zoom out sufficiently
-        self._plane = GLPlaneItem(volsize[0], volsize[1])
-        self.addItem(self._plane)
+        viewsize = imgsize.copy() # Shape of viewport
+        viewsize[2] *= self._z_aniso
+        self.opts['center'] = pg.Vector(*(viewsize/2))
+        self.setCameraPosition(distance=viewsize.max() * 1.5) # Zoom out sufficiently
+        self._plane = None
         self._cursor_pt = gl.GLScatterPlotItem(**self.cursor_opts)
         self.addItem(self._cursor_pt)
         self._meshes = []
 
-    def setObjects(self, objs: Dict[int, Triangulation]):
+    def setROIs(self, rois: List[List[ROI]]):
+        # Remove existing meshes
         for mesh in self._meshes:
             self.removeItem(mesh)
         self._meshes = []
+        # Compute 3d objects from 2d ROIs associated by their labels
+        objs = dict()
+        for z_i, level in enumerate(rois):
+            z = z_i * self._z_aniso
+            for roi in level:
+                verts = roi.asPoly().vertices
+                verts = np.hstack((verts, np.full((verts.shape[0], 1), z)))
+                if roi.lbl in objs:
+                    objs[roi.lbl].append(verts)
+                else:
+                    objs[roi.lbl] = [verts]
+        # Triangulate the objects
         nfc = len(self.facecolors)
-        for lbl, obj in objs.items():
-            colors = np.full((len(obj.simplices), 4), self.facecolors[lbl % nfc])
-            md = gl.MeshData(vertexes=obj.pts, faces=obj.simplices, faceColors=colors)
+        for lbl, verts in objs.items():
+            tri = Triangulation.surface_3d(
+                np.concatenate(verts), method='advancing_front' # TODO: take options from GUI here
+            )
+            colors = np.full((len(tri.simplices), 4), self.facecolors[lbl % nfc])
+            md = gl.MeshData(vertexes=tri.pts, faces=tri.simplices, faceColors=colors)
             mesh = gl.GLMeshItem(meshdata=md, **self.mesh_opts)
             self.addItem(mesh)
             self._meshes.append(mesh)
 
-    def setZ(self, z: float):
-        self._plane.setZ(z)
+    def setZ(self, z: int, img: np.ndarray):
+        if not self._plane is None:
+            self.removeItem(self._plane)
+        img = img.astype(np.float32)  # Convert to float for proper scaling
+        img -= img.min()  # Shift min to 0
+        img /= img.max()  # Normalize to [0, 1]
+        img_8bit = (img * 255).astype(np.uint8)  # Scale to [0, 255]
+        img_rgba = np.stack([img_8bit] * 3 + [np.full_like(img_8bit, 255)], axis=-1)  # Add RGBA channels
+        self._plane = gl.GLImageItem(img_rgba)
+        self._plane.translate(0, 0, z * self._z_aniso)
+        self.addItem(self._plane)
 
     def setXY(self, xy: Tuple[int, int]):
         self._cursor_xy = xy
@@ -205,15 +234,15 @@ class ZStackSegmentorApp(ImageSegmentorApp):
     '''
     # TODO: better approach than overriding private
     def _pre_super_init(self):
-        self._voxsize = get_voxel_size(self._img_path, fmt='XYZ') # Physical voxel sizes
-        self._volsize = self._voxsize * np.array([self._img.shape[1], self._img.shape[2], self._img.shape[0]])
-        self._viewer = ZStackObjectViewer(self._volsize)
+        imgsize = np.array([self._img.shape[1], self._img.shape[2], self._img.shape[0]])
+        voxsize = get_voxel_size(self._img_path, fmt='XYZ') # Physical voxel sizes
+        self._viewer = ZStackObjectViewer(imgsize, voxsize)
         self._viewer.show()
 
     # TODO: better approach than overriding private
     def _set_z_raw(self, z: int):
         super()._set_z_raw(z)
-        self._viewer.setZ(z * self._voxsize[2])
+        self._viewer.setZ(z, self._creator._get_img().T) #TODO: Ugly private use, also transpose?
 
     def closeEvent(self, evt):
         if not self._viewer is None:
@@ -223,19 +252,4 @@ class ZStackSegmentorApp(ImageSegmentorApp):
     # TODO: better approach than overriding private
     def _refresh_ROIs(self):
         super()._refresh_ROIs()
-        # Compute 3d objects from 2d ROIs associated by their labels
-        objs = dict()
-        for z_i, level in enumerate(self._rois):
-            for roi in level:
-                verts = roi.asPoly().vertices
-                verts = np.hstack((verts, np.full((verts.shape[0], 1), z_i))) * self._voxsize
-                if roi.lbl in objs:
-                    objs[roi.lbl].append(verts)
-                else:
-                    objs[roi.lbl] = [verts]
-        # Triangulate the objects
-        for lbl, verts in objs.items():
-            objs[lbl] = Triangulation.surface_3d(
-                np.concatenate(verts), method='advancing_front'
-            )
-        self._viewer.setObjects(objs)
+        self._viewer.setROIs(self._rois)
