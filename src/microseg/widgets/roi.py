@@ -69,13 +69,13 @@ class LabeledROI:
         _, ylen = img_shape
         return self.flipy(ylen)
     
-    def asPoly(self) -> PlanarPolygon:
+    def asPoly(self, n: int=20) -> PlanarPolygon:
         if type(self.roi) is PlanarPolygon:
             return self.roi
         elif type(self.roi) is Ellipse:
-            return self.roi.discretize(50)
+            return self.roi.discretize(n)
         elif type(self.roi) is Circle:
-            return self.roi.discretize(50)
+            return self.roi.discretize(n)
         else:
             # raise NotImplementedError(f'Invalid ROI type {type(self.roi)}')
             return self.roi

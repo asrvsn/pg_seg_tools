@@ -188,6 +188,7 @@ class ROIsCreator(VLayoutWidget):
     '''
     add = QtCore.Signal(object) # List[ROI]
     delete = QtCore.Signal(object) # Set[int], labels of deleted ROIs
+    image_changed = QtCore.Signal(object) # np.ndarray XY
     AVAIL_MODES: List[SegmentorWidget] = [
         CellposeSingleSegmentorWidget,
         CellposeMultiSegmentorWidget,
@@ -352,7 +353,9 @@ class ROIsCreator(VLayoutWidget):
         return img
     
     def _redraw_img(self):
-        self._widget.setImage(self._get_img())
+        img = self._get_img()
+        self._widget.setImage(img)
+        self.image_changed.emit(img)
 
     def _add_from_child(self, poly: PlanarPolygon):
         '''

@@ -34,7 +34,6 @@ class ImageSegmentorApp(SaveableApp):
         else:
             print(f'Received z-stack with {self._zmax} slices, enabling z-slider')
             self._z_slider.setData(0, self._zmax-1, self._z)
-        self._creator.setImage(self._img[self._z])
 
         # Listeners
         self._creator.add.connect(self._add)
@@ -43,6 +42,7 @@ class ImageSegmentorApp(SaveableApp):
 
         # Run data load and rest of initialization in superclass
         self._pre_super_init() # TODO: so ugly
+        self._creator.setImage(self._img[self._z])
         super().__init__(
             f'Segmenting {desc} on image: {os.path.basename(img_path)}',
             f'{os.path.splitext(img_path)[0]}.{desc}',
@@ -101,12 +101,8 @@ class ImageSegmentorApp(SaveableApp):
             if set_slider:
                 self._z_slider.setValue(z) # Callback will go to next branch
             else:
-                self._set_z_raw(z)
-
-    def _set_z_raw(self, z: int):
-        # Hook-in for children
-        self._z = z
-        self._creator.setData(self._img[z], self._rois[z])
+                self._z = z
+                self._creator.setData(self._img[z], self._rois[z])
 
     @property
     def next_label(self) -> int:
@@ -151,14 +147,14 @@ class ZStackObjectViewer(gl.GLViewWidget):
         super().__init__(*args, **kwargs)
         self._imgsize = imgsize # XYZ
         self._voxsize = voxsize # XYZ
-        self._z_aniso = -voxsize[2] / voxsize[0] # Rendered in space where XY are unit-size pixels, scale z accordingly
+        self._z_aniso = voxsize[2] / voxsize[0] # Rendered in space where XY are unit-size pixels, scale z accordingly
         self.setWindowTitle('Z-Slice Object Viewer')
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         MainWindow.resizeToScreen(self, offset=1) # Show on next avail screen
         viewsize = imgsize.copy() # Shape of viewport
         viewsize[2] *= self._z_aniso
         self.opts['center'] = pg.Vector(*(viewsize/2))
-        self.setCameraPosition(distance=viewsize.max() * 1.5) # Zoom out sufficiently
+        self.setCameraPosition(distance=viewsize.max() * 1.1) # Zoom out sufficiently
         self._plane = None
         self._cursor_pt = gl.GLScatterPlotItem(**self.cursor_opts)
         self.addItem(self._cursor_pt)
@@ -177,15 +173,22 @@ class ZStackObjectViewer(gl.GLViewWidget):
                 verts = roi.asPoly().vertices
                 verts = np.hstack((verts, np.full((verts.shape[0], 1), z)))
                 if roi.lbl in objs:
-                    objs[roi.lbl].append(verts)
+                    objs[roi.lbl].append((z, roi))
                 else:
-                    objs[roi.lbl] = [verts]
+                    objs[roi.lbl] = [(z, roi)]
         # Triangulate the objects
         nfc = len(self.facecolors)
-        for lbl, verts in objs.items():
-            tri = Triangulation.surface_3d(
-                np.concatenate(verts), method='advancing_front' # TODO: take options from GUI here
-            )
+        for lbl, l_rois in objs.items():
+            # Case 1: No solid object
+            if len(l_rois) == 1:
+                z, roi = l_rois[0]
+                tri = Triangulation.from_polygon(roi.asPoly(n=20), z)
+            # Case 2: Solid object
+            else:
+                verts = [(z, roi.asPoly(n=20).vertices) for _, roi in l_rois]
+                verts = [np.hstack((v, np.full((v.shape[0], 1), z))) for z, v in verts]
+                verts = np.concatenate(verts)
+                tri = Triangulation.surface_3d(verts, method='advancing_front') # TODO: take options from GUI here
             colors = np.full((len(tri.simplices), 4), self.facecolors[lbl % nfc])
             md = gl.MeshData(vertexes=tri.pts, faces=tri.simplices, faceColors=colors)
             mesh = gl.GLMeshItem(meshdata=md, **self.mesh_opts)
@@ -231,6 +234,7 @@ class ZStackSegmentorApp(ImageSegmentorApp):
             - make sure to use correct z-position using image metadata (voxel aspect ratio)
         b. Render current z-plane in view
         c. Render position of cursor in z-plane (might need to bubble up from lower level)
+    4. Upgrade 2D segmentation to include intensity graph + filters
     '''
     # TODO: better approach than overriding private
     def _pre_super_init(self):
@@ -238,11 +242,7 @@ class ZStackSegmentorApp(ImageSegmentorApp):
         voxsize = get_voxel_size(self._img_path, fmt='XYZ') # Physical voxel sizes
         self._viewer = ZStackObjectViewer(imgsize, voxsize)
         self._viewer.show()
-
-    # TODO: better approach than overriding private
-    def _set_z_raw(self, z: int):
-        super()._set_z_raw(z)
-        self._viewer.setZ(z, self._creator._get_img().T) #TODO: Ugly private use, also transpose?
+        self._creator.image_changed.connect(lambda img: self._viewer.setZ(self._z, img.T)) # Transpose?
 
     def closeEvent(self, evt):
         if not self._viewer is None:

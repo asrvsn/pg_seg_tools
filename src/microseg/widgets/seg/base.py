@@ -43,7 +43,7 @@ class ROICreatorWidget(VLayoutWidget):
     '''
     Create ROIs from polygons
     '''
-    edited = QtCore.Signal(object) # List[ROI]
+    processed = QtCore.Signal(object) # List[ROI]
     MOVE_SCALE = 0.3
     
     def __init__(self, *args, **kwargs):
@@ -77,13 +77,10 @@ class ROICreatorWidget(VLayoutWidget):
 
         # State
         self._polys = []
-        self._rois = []
-        self._offset = np.array([0, 0])
         self._poly_btn.setChecked(True)
         self._chull_box.setChecked(False)
-        self._simplify_sld.setData(0., 0.02, 0.)
-        self._scale_sld.setData(0.6, 1.4, 1.0)
-
+        self._reset_state()
+        
         # Listeners
         for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn, self._chull_box]:
             btn.toggled.connect(self._recompute)
@@ -95,13 +92,19 @@ class ROICreatorWidget(VLayoutWidget):
 
     def setPolys(self, polys: List[PlanarPolygon]):
         self._polys = polys
-        self._simplify_sld.setValue(0.)
+        self._reset_state()
         self._recompute()
 
     def getROIs(self) -> List[ROI]:
         return self._rois
 
     ''' Private methods '''
+
+    def _reset_state(self):
+        self._rois = []
+        self._simplify_sld.setData(0., 0.02, 0.)
+        self._scale_sld.setData(0.6, 1.4, 1.0)
+        self._offset = np.array([0, 0])
 
     def _recompute(self):
         mk_poly = self._poly_btn.isChecked()
@@ -130,7 +133,8 @@ class ROICreatorWidget(VLayoutWidget):
             else:
                 raise Exception('Invalid ROI type')
             self._rois.append(roi)
-        self.edited.emit(self._rois)
+        print('ROIs created')
+        self.processed.emit(self._rois)
 
     def _on_touchpad_move(self, dx: np.ndarray):
         ''' Compute offset by integrating touchpad movement '''
@@ -147,7 +151,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         # Widgets
         self._main = VLayoutWidget()
         self.addWidget(self._main)
-        roi_wdg = VGroupBox('ROI settings')
+        roi_wdg = VGroupBox('Shape processing')
         self._roi_creator = ROICreatorWidget()
         roi_wdg.addWidget(self._roi_creator)
         self.addWidget(roi_wdg)
@@ -166,7 +170,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         self.reset_state()
 
         # Listeners
-        self._roi_creator.edited.connect(self.propose.emit) # Bubble from the editor
+        self._roi_creator.processed.connect(self.propose.emit) # Bubble from the editor
         self._ok_btn.clicked.connect(self._ok)
         self._cancel_btn.clicked.connect(self._cancel)
         
@@ -261,4 +265,4 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
 
     def _set_proposals(self, polys: List[PlanarPolygon]):
         self._proposed_polys = polys
-        self._roi_creator.setPolys(polys)
+        self._roi_creator.setPolys(polys) # propose() event will bubble through ROI editor

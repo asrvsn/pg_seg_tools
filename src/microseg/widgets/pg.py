@@ -311,3 +311,57 @@ class MaskImageWidget(NoTouchPlotWidget):
         self._mask = mask
         self._img_item.setImage(img)
         self._mask_item.setMask(mask)
+
+class HistogramFilterWidget(pg.PlotWidget):
+    '''
+    Similar to HistogramLUTItem, but without being tied to images.
+    '''
+    filterChanged = QtCore.Signal() 
+
+    def __init__(self, *args, title='Histogram', **kwargs):
+        super().__init__(*args, **kwargs)
+        # Widgets
+        ## Plot
+        pitem = self.getPlotItem()
+        pitem.setTitle(title)
+        pitem.hideAxis('left')
+        pitem.setMouseEnabled(x=False, y=False)
+        ## Histogram
+        self._hist = pitem.plot([], [], stepMode=True, fillLevel=0, brush=(0,0,255,150))
+        ## Region selection
+        self._region = pg.LinearRegionItem(orientation='horizontal')
+        self._region.setZValue(10)
+        pitem.addItem(self._region)
+
+        # Listeners
+        self._region.sigRegionChanged.connect(self._on_region_changed)
+
+        # State
+        self._hist_data = None
+        self._mask = None
+
+    def setData(self, data: np.ndarray, n_per_bin: int=10):
+        assert n_per_bin > 0
+        if len(data) > 0:
+            self._hist_data = data
+            n_bins = max(1, len(data) // n_per_bin)
+            hist, bin_edges = np.histogram(data, bins=n_bins)
+            bin_centers = (bin_edges[1:] + bin_edges[:-1]) / 2
+            self._hist.setData(bin_centers, hist)
+            self._region.setRegion([data.min(), data.max()])
+        else:
+            self._hist.setData([], [])
+            self._region.setRegion([0, 0])  # Reset region
+        self._mask = np.full(data.shape, True)
+
+    def _on_region_changed(self):
+        if self._hist_data is None or len(self._hist_data) == 0:
+            self._mask = np.array([])
+        else:
+            minX, maxX = self._region.getRegion()
+            self._mask = (self._hist_data >= minX) & (self._hist_data <= maxX)
+        self.filterChanged.emit()
+
+    @property
+    def mask(self):
+        return self._mask
